@@ -33,7 +33,7 @@ from fangorn.models.likelihoods import ElementSix as Likelihood
 from abc import ABC
 
 
-class AbstractRootsAndCultureAgent(AgentInterface, ABC):
+class RootsAndCultureAgent(AgentInterface, ABC):
 
     # The agent's species
     species = [
@@ -65,7 +65,7 @@ class AbstractRootsAndCultureAgent(AgentInterface, ABC):
             AgentInterface.ontology_name(HempHeight, "Continuous"): "obs_plant_height",
             AgentInterface.ontology_name(HempDensity, "Continuous"): "obs_plant_density"
         }
-        super().__init__(agent_name, data, obs_to_site)
+        super().__init__("Roots-and-Culture.roots-indoor1.Deterministic", data, obs_to_site)
 
         self.n_species = 1  # TODO = len(self.data.project.strategies[0].species)
 
@@ -228,25 +228,64 @@ class AbstractRootsAndCultureAgent(AgentInterface, ABC):
         :param reports: the new reports
         """
 
-        # Extract report as numpy array
-        n_values = sum([len(column) for column in reports.iloc[0] if isinstance(column, list)]) / len(self.lots)
-        np_report = np.zeros([len(reports.index) * len(self.lots), int(n_values)])
-        for j, lot in enumerate(self.lots):
-            k = 0
-            for obs_name in self.sample_sites():
-                for column in reports[obs_name]:
-                    for value in column:
-                        np_report[j][k] = value
-                        k += 1
-        np_report = jnp.expand_dims(np_report.transpose(), axis=(0, 2))
-        np_report = np_report.mean(axis=-1).swapaxes(1, 2)
+        # Extract reports content as numpy array
+        np_reports = stack([self.extract_measurements(reports, lot) for lot in range(self.n_lots)])
+        np_reports = jnp.expand_dims(np_reports, axis=0)
 
-        # Merge new report to all reports
-        self.reports = np_report if self.reports is None else jnp.concatenate((self.reports, np_report), axis=0)
+        # Merge new report to already existing reports
+        self.reports = np_reports if self.reports is None else jnp.concatenate((self.reports, np_reports), axis=0)
 
-        # Update time horizon and number of lots
-        self.time_horizon = self.reports.shape[0]
-        self.n_lots = self.reports.shape[1]
+    def extract_measurements(self, reports, lot_id):
+        """
+        Extract the measurements associated with a lot
+        :param reports: the reports available
+        :param lot_id: the lot's index whose measurements need to be retrieved
+        :return: the lot's measurements
+        """
+
+        # Select only the measurements correspond to i-th lot
+        reports = reports[reports['lot'] == lot_id]
+
+        # Create the numpy array that will contain the measurements
+        observations = np.zeros(self.number_of_measurements(reports))
+
+        # Iterate over the observation names
+        obs_id = 0
+        for obs_name in self.observations:
+
+            # Iterate over the measurements associated with these observations
+            for measurements in reports[obs_name]:
+
+                # Extract the measurements
+                measurements = [measurements] if isinstance(measurements, float) else measurements
+                for measurement in measurements:
+                    observations[obs_id] = measurement
+                    obs_id += 1
+
+        return observations
+
+    def number_of_measurements(self, reports):
+        """
+        Getter
+        :param reports: the reports
+        :return: the number of measurements in the reports
+        """
+
+        # Get the measurements in the first row of the reports
+        measurements = reports[self.observations].iloc[0].tolist()
+
+        # Iterate over the measurements
+        n_reports = 0
+        for measurement in measurements:
+
+            # Process each measurement
+            if isinstance(measurement, float):
+                n_reports += 1
+            elif isinstance(measurement, list):
+                n_reports += len(measurement)
+
+        # Divide the total number of measurement by the number of lots
+        return int(n_reports)
 
     def guide(self, *args, **kwargs):
         """
@@ -407,17 +446,8 @@ class AbstractRootsAndCultureAgent(AgentInterface, ABC):
     def parabola(lower, upper, size, x):
         return - size * (x - lower) * (x - upper)
 
-
-class DeterministicRootsAndCultureAgent(AbstractRootsAndCultureAgent):
-
-    def __init__(self, data):
-        super().__init__("Roots-and-Culture.roots-indoor1.Deterministic", data)
-
     def model(self, *args, **kwargs):
         return self.deterministic_dynamics(*self.global_parametric_model(*args, **kwargs))
-
-    def simulate_plant_dynamic(self):
-        pass  # TODO implement the plant dynamic
 
     def deterministic_dynamics(self, effects, coefficients, mask, data_level):
         # Initial states
@@ -426,32 +456,13 @@ class DeterministicRootsAndCultureAgent(AbstractRootsAndCultureAgent):
         plant_density = jnp.zeros((self.n_lots, self.n_species))
         plant_height = jnp.zeros((self.n_lots, self.n_species))
 
-        # TODO soil_temperature = jnp.ones(L) * 0.1
-        # TODO microbial_biomass = jnp.ones(L) * 0.1
-        # TODO soil_moisture = jnp.ones(L) * 0.1
-        # TODO creating: _macrobial_biomass ? + _soil_biomass = _macrobial_biomass + _microbial_biomass
-
         init = (soil_nutrients, soil_biomass, plant_density, plant_height)
-        # TODO , soil_temperature, microbial_biomass, soil_moisture
 
         # Time steps
         def step_fn(carry, xs):
 
             events, _water_effect, _temp_effect, num_seeds, _mask = xs
             _soil_nutrients, _soil_biomass, _plant_density, _plant_height = carry
-            # TODO , _soil_temperature, _microbial_biomass, _soil_moisture
-
-            # TODO modelling: _soil_temperature, _microbial_biomass, _soil_moisture
-            # TODO _soil_moisture = ? # Sun reduce soil moisture,
-            # Rain increase soil moisture,
-            # Frost decreases soil permeability (decreasing moisture?),
-            # Snow increase soil moisture (keep soil hotter and permeable)
-            # TODO _soil_temperature = ? # Sun heat the soil
-            # rain reduces soil temperature
-            # frost reduces soil temperature
-            # snow increase soil temperature (keep it close to zero when air temperature become negative)
-            # TODO _microbial_biomass = ? # Soil temperature kill (10℃ > t > 35.6℃) or activate (10℃-35.6℃) microorganism
-            # TODO _soil_nutrients = ? # organic matter + microbial biomass increases soil nutrient, and fertiliser increase soil nutrients
 
             # Compute the total effect of interventions on soil, plant survival, and plant growth
             mod_nutrients = jnp.stack([
@@ -487,9 +498,6 @@ class DeterministicRootsAndCultureAgent(AbstractRootsAndCultureAgent):
 
                 # Ensure the soil_biomass' shape is correct
                 assert soil_biomass.shape == (self.n_lots,)
-
-                # Compute the plant dynamic
-                self.simulate_plant_dynamic()
 
                 # TODO is this plant specific
                 # Compute the new plant height
@@ -540,114 +548,5 @@ class DeterministicRootsAndCultureAgent(AbstractRootsAndCultureAgent):
                 )
 
             return (soil_nutrients, soil_biomass, plant_density, plant_height), None
-
-        scan(step_fn, init, (self.data.policies, effects['water'], effects['temp'], effects['seeding'], mask))
-
-
-class StochasticRootsAndCultureAgent(AbstractRootsAndCultureAgent):
-
-    def __init__(self, data):
-        # Call parent constructor
-        super().__init__("Roots-and-Culture.roots-indoor1.Stochastic", data)
-
-    def model(self, *args, **kwargs):
-        return self.stochastic_dynamics(*self.global_parametric_model(*args, **kwargs))
-
-    def stochastic_dynamics(self, effects, coefficients, mask, data_level):
-        # Initial states
-        soil_nutrients = jnp.ones(self.n_lots) * 0.1
-        soil_biomass = jnp.ones(self.n_lots) * 0.1
-        plant_density = jnp.zeros((self.n_lots, self.n_species))
-        plant_height = jnp.zeros((self.n_lots, self.n_species))
-
-        init = (soil_nutrients, soil_biomass, plant_density, plant_height)
-
-        # Time steps
-        def step_fn(carry, xs):
-            interventions, _water_effect, _temp_effect, num_seeds, _mask = xs
-            _soil_nutrients, _soil_biomass, _plant_density, _plant_height = carry
-
-            mod_nutrients = jnp.stack([
-                eff * jnp.any(interventions == self.name_integer[inter], -1)
-                for (inter, eff) in effects['nutrients'].items()
-            ], -1).sum(-1)
-
-            mod_soil = jnp.stack([
-                eff * jnp.any(interventions == self.name_integer[inter], -1)
-                for (inter, eff) in effects['soil'].items()
-            ], -1).sum(-1)
-
-            mod_survival = jnp.stack([
-                eff * jnp.any(interventions == self.name_integer[inter], -1)
-                for (inter, eff) in effects['survival'].items()
-            ], -1).sum(-1)
-
-            mod_growth = jnp.stack([
-                eff * jnp.any(interventions == self.name_integer[inter], -1)
-                for (inter, eff) in effects['growth'].items()
-            ], -1).sum(-1)
-
-            with plate('num_lots', self.n_lots):
-                # dynamics
-                kappa = self.sample_folded_normal('nutrients_rate', Normal(4.5, 0.1))
-                r = 1 - jnp.exp(-kappa)
-                soil_nutrients = deterministic(
-                    'soil_nutrients', jnp.clip(_soil_nutrients * r + mod_nutrients, a_min=0., a_max=1.)
-                )
-                sn_eff1 = soil_nutrients - 1.
-                sn_eff2 = jnp.clip(soil_nutrients - .05, a_min=0., a_max=1) - 1.
-
-                eta_max = 0.1 + 0.9 * jnp.heaviside(_plant_density - 1 / self.area, 1.).mean(-1)
-                soil_bio_rate = mod_soil + _water_effect
-                loc = (1 + soil_bio_rate) / 52
-                kappa = self.sample_folded_normal('biomass_rate', Normal(loc, 0.1))
-                r = 1 - jnp.exp(-kappa)
-                soil_biomass = deterministic('soil_biomass', _soil_biomass + r * (eta_max - _soil_biomass))
-
-                assert soil_biomass.shape == (self.n_lots,)
-
-                growth_rate = jnp.expand_dims(
-                    _soil_biomass * coefficients['height']['soil_biomass'] + _water_effect + _temp_effect +
-                    sn_eff2 + mod_growth, -1) + _plant_density * coefficients['height']['plant_density']
-
-                loc = (1 + growth_rate) / 4
-                kappa = self.sample_folded_normal('growth_rate', Normal(loc, 0.1))
-                r = 1 - jnp.exp(-kappa)
-                plant_height = deterministic(
-                    'plant_height',
-                    (_plant_height + r * (self.params['max_height'] - _plant_height)) *
-                    jnp.heaviside(_plant_density - 1 / self.area, 1.)
-                )
-
-                assert plant_height.shape == (self.n_lots, self.n_species)
-
-                plant_unit_biomass = jnp.clip(plant_height * self.plant_height_to_biomass, a_min=1e-16)
-
-                survival_rate = jnp.expand_dims(
-                    _soil_biomass * coefficients['survival']['soil_biomass'] + _water_effect + _temp_effect +
-                    mod_survival + sn_eff1, -1
-                ) + _plant_density * coefficients['survival']['plant_density']
-
-                assert survival_rate.shape == (self.n_lots, self.n_species)
-
-                loc = 8. * (1 + survival_rate)
-                kappa = self.sample_folded_normal('survival_rate', Normal(loc, 0.1))
-                r = deterministic('survival_probability', 1 - jnp.exp(- kappa))
-                new_plant_density = r * _plant_density + num_seeds
-
-                harvest = jnp.expand_dims(jnp.any(self.name_integer['harvest-hemp'] == interventions, -1), -1)
-                harvest_yield = jnp.clip(new_plant_density * plant_unit_biomass,
-                                         a_max=self.params['max_weekly_harvest']) * harvest
-                yield_per_m2 = deterministic('yield_density', harvest_yield)
-
-                assert harvest_yield.shape == (self.n_lots, self.n_species)
-
-                plant_density = deterministic('plant_density', new_plant_density - harvest_yield / plant_unit_biomass)
-
-                self.likelihood(
-                    soil_biomass, plant_density, plant_height, yield_per_m2, self.params, _mask, data_level=data_level
-                )
-
-                return (soil_nutrients, soil_biomass, plant_density, plant_height), None
 
         scan(step_fn, init, (self.data.policies, effects['water'], effects['temp'], effects['seeding'], mask))
