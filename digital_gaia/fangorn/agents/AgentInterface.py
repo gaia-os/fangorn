@@ -10,8 +10,8 @@ import numpyro
 import abc
 from abc import ABC
 from functools import partial
-from fangorn.kernels.impl.MCMCKernel import MCMCKernel
-from fangorn.kernels.impl.SVIKernel import SVIKernel
+from digital_gaia.fangorn.kernels.impl.MCMCKernel import MCMCKernel
+from digital_gaia.fangorn.kernels.impl.SVIKernel import SVIKernel
 
 
 class AgentInterface(ABC):
@@ -338,6 +338,6 @@ class AgentInterface(ABC):
         :param variable_value: the value taken by the enumeration
         :return: the name of the ontology entry
         """
-        prefix = "fangorn.ontology."
+        prefix = "digital_gaia.fangorn.ontology."
         ontology_name = variable_enum.__module__ + "." + variable_enum.__name__ + "." + variable_value
         return ontology_name[len(prefix):]

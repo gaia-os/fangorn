@@ -1,9 +1,9 @@
-from fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
-from fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
-from fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
-from fangorn.ontology.v1.management.base.agriculture.Planting import PlantingSeeds as PlantingSeeds
+from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
+from digital_gaia.fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Planting import PlantingSeeds as PlantingSeeds
 from jax.tree_util import tree_map
-from fangorn.agents.AgentInterface import AgentInterface
+from digital_gaia.fangorn.agents.AgentInterface import AgentInterface
 import jax.numpy as jnp
 from jax.numpy import stack, pad, array
 import numpy as np

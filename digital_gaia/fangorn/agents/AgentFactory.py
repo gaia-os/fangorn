@@ -55,7 +55,7 @@ class AgentFactory:
         """
         # Get all non-abstract agent classes
         agent_dir = os.path.abspath(os.path.dirname(__file__) + "/impl/")
-        agents = AgentFactory.get_all_classes(agent_dir, "fangorn.agents.impl.").values()
+        agents = AgentFactory.get_all_classes(agent_dir, "digital_gaia.fangorn.agents.impl.").values()
         agents = [agent for agent in agents if abc.ABC not in agent.__bases__]
         if verbose:
             AgentFactory.print_list("Agents found:", agents)

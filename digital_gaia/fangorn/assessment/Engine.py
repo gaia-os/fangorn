@@ -1,6 +1,6 @@
-from fangorn.assessment.DataLoader import DataLoader
-from fangorn.assessment import ArgumentParser
-from fangorn.agents.AgentFactory import AgentFactory
+from digital_gaia.fangorn.assessment.DataLoader import DataLoader
+from digital_gaia.fangorn.assessment import ArgumentParser
+from digital_gaia.fangorn.agents.AgentFactory import AgentFactory
 from jax.numpy import concatenate
 import traceback
 
@@ -12,7 +12,7 @@ class Engine:
 
     def __init__(self, verbose=False, debug=False):
         """
-        Construct the assessment engine
+        Construct the assessment fangorn
         :param verbose: True if useful information should be displayed, False otherwise
         :param debug: True if debug information should be displayed, False otherwise
         """

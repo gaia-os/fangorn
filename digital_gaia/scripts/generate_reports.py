@@ -1,6 +1,6 @@
-from fangorn.assessment.DataLoader import DataLoader
-from fangorn.assessment.ArgumentParser import ArgumentParser
-from fangorn.agents.AgentFactory import AgentFactory
+from digital_gaia.fangorn.assessment.DataLoader import DataLoader
+from digital_gaia.fangorn.assessment.ArgumentParser import ArgumentParser
+from digital_gaia.fangorn.agents.AgentFactory import AgentFactory
 
 
 def generate_reports():

@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from numpyro.infer.util import log_density
 from jax import lax, grad, hessian
-from fangorn.guides.filters.FilterInterface import FilterInterface
+from digital_gaia.fangorn.guides.filters.FilterInterface import FilterInterface
 
 
 class NewtonFilter(FilterInterface):

@@ -2,7 +2,7 @@ from numpyro import deterministic
 import numpyro.distributions as dist
 import jax.numpy as jnp
 from numpyro import sample
-from fangorn.models.distributions import SkewNormal, LUB
+from digital_gaia.fangorn.models.distributions import SkewNormal, LUB
 from numpyro.distributions import LogNormal, Gamma
 from jax import nn
 import jax

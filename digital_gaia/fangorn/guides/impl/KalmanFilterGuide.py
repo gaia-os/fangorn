@@ -4,7 +4,7 @@ from functools import partial
 import numpyro.distributions as dist
 from numpyro import sample, handlers
 from numpyro.contrib.control_flow import scan
-from fangorn.guides.GuideInterface import GuideInterface
+from digital_gaia.fangorn.guides.GuideInterface import GuideInterface
 try:
     from numpyro.contrib.nested_sampling import NestedSampler
 except Exception as e:

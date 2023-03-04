@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_dir = {'': 'src'}
+package_dir = {'': '.'}
 
 package_data = {'': ['*']}
 

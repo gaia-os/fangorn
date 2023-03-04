@@ -2,7 +2,7 @@ import optax
 from numpyro.optim import optax_to_numpyro
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from numpyro.infer import SVI, Trace_ELBO
-from fangorn.guides.filters.FilterInterface import FilterInterface
+from digital_gaia.fangorn.guides.filters.FilterInterface import FilterInterface
 
 
 class KullbackLeiblerFilter(FilterInterface):

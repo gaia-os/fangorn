@@ -1,4 +1,4 @@
-from fangorn.kernels.KernelInterface import KernelInterface
+from digital_gaia.fangorn.kernels.KernelInterface import KernelInterface
 import numpyro
 from jax import random
 

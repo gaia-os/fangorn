@@ -1,7 +1,7 @@
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.optim import Minimize
 from numpyro.infer.autoguide import AutoLaplaceApproximation
-from fangorn.guides.filters.FilterInterface import FilterInterface
+from digital_gaia.fangorn.guides.filters.FilterInterface import FilterInterface
 
 
 class LaplaceKF(FilterInterface):

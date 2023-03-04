@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import random
 from numpyro.infer import SA, MCMC
-from fangorn.guides.filters.FilterInterface import FilterInterface
+from digital_gaia.fangorn.guides.filters.FilterInterface import FilterInterface
 try:
     from numpyro.contrib.nested_sampling import NestedSampler
 except Exception as e:

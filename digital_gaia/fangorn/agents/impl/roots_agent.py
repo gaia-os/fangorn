@@ -1,35 +1,35 @@
 from meteostat import Stations, Daily
 from datetime import datetime
-from fangorn.ontology.v1.measurement.base.agriculture.PlantDensity import HempDensity
-from fangorn.ontology.v1.measurement.base.agriculture.PlantHeight import HempHeight
-from fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
-from fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
-from fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
-from fangorn.ontology.v1.management.base.agriculture.BioChar import UseBioChar as UseBioChar
-from fangorn.ontology.v1.management.base.agriculture.Planting import PlantingSeeds as PlantingSeeds
-from fangorn.ontology.v1.management.base.agriculture.Fertilizer import FertilizeSoil as FertilizeSoil
-from fangorn.ontology.v1.management.base.agriculture.AlfalfaCompost import UseAlfalfaCompost as UseAlfalfaCompost
-from fangorn.ontology.v1.management.base.agriculture.VermiCompost import UseVermiCompost as UseVermiCompost
-from fangorn.ontology.v1.management.base.agriculture.CowManure import UseCowManure as UseCowManure
-from fangorn.ontology.v1.management.base.agriculture.Mycorrhizae import UseMycorrhizae as UseMycorrhizae
-from fangorn.ontology.v1.management.base.agriculture.Irrigation import IrrigateCrops as IrrigateCrops
-from fangorn.ontology.v1.management.base.agriculture.Pesticide import SpreadPesticide as SpreadPesticide
-from fangorn.ontology.v1.management.base.agriculture.Pruning import PruneCrops as PruneCrops
-from fangorn.pydantic.Report import Report
-from fangorn.pydantic.Observation import Observation
+from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.PlantDensity import HempDensity
+from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.PlantHeight import HempHeight
+from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
+from digital_gaia.fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.BioChar import UseBioChar as UseBioChar
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Planting import PlantingSeeds as PlantingSeeds
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Fertilizer import FertilizeSoil as FertilizeSoil
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.AlfalfaCompost import UseAlfalfaCompost as UseAlfalfaCompost
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.VermiCompost import UseVermiCompost as UseVermiCompost
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.CowManure import UseCowManure as UseCowManure
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Mycorrhizae import UseMycorrhizae as UseMycorrhizae
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Irrigation import IrrigateCrops as IrrigateCrops
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Pesticide import SpreadPesticide as SpreadPesticide
+from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Pruning import PruneCrops as PruneCrops
+from digital_gaia.fangorn.pydantic.Report import Report
+from digital_gaia.fangorn.pydantic.Observation import Observation
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from jax.tree_util import tree_map
 import jax.tree_util as jtu
 from jax.numpy import stack, pad, array
 from datetime import timedelta
-from fangorn.agents.AgentInterface import AgentInterface
+from digital_gaia.fangorn.agents.AgentInterface import AgentInterface
 import jax.numpy as jnp
 import numpy as np
 from numpyro import sample, deterministic, handlers, plate
 from numpyro.contrib.control_flow import scan
 from numpyro.infer.reparam import TransformReparam, LocScaleReparam
 from numpyro.distributions import FoldedDistribution, Normal, LogNormal, Gamma, InverseGamma, Uniform, TruncatedNormal
-from fangorn.models.likelihoods import ElementSix as Likelihood
+from digital_gaia.fangorn.models.likelihoods import ElementSix as Likelihood
 from abc import ABC
 
 
@@ -58,7 +58,7 @@ class RootsAndCultureAgent(AgentInterface, ABC):
         AgentInterface.ontology_name(PruneCrops, "Yes")
     ]
 
-    def __init__(self, agent_name, data):
+    def __init__(self, data):
         # Call parent constructor
         obs_to_site = {
             AgentInterface.ontology_name(HempYield, "Continuous"): "obs_yield_density",
@@ -118,9 +118,6 @@ class RootsAndCultureAgent(AgentInterface, ABC):
             self.interventions = self.interventions.union(set(strategy.interventions))
         self.name_integer = {k: v + 1 for v, k in enumerate(sorted(self.interventions))}
 
-        # Get weather information
-        self.weather = self.get_weather()
-
         # Store actions information
         self.action_names = [
             "planting-alfalfa", "harvest-alfalfa", "planting-hemp", "harvest-hemp", "irrigation",
@@ -146,38 +143,7 @@ class RootsAndCultureAgent(AgentInterface, ABC):
         # Pad the actions to ensure they all have the same length
         return stack([pad(array(actions), (0, self.n_actions - len(actions))) for actions in policy])
 
-    def get_weather(self):
-        """
-        Get weekly weather data for all locations
-        :return: the weekly weather data
-        """
-        start = datetime(2021, 1, 1)  # TODO this needs to be loaded from the config file
-        end = datetime(2021, 12, 31)  # TODO this needs to be loaded from the config file
-        all_stations = Stations()
-        weather = None
-        for lot in self.data.project.lots:
-            long, lat = jnp.array(lot.bounds.coordinates[0]).mean(-2)
-            stations = all_stations.nearby(lat.item(), long.item())
-            data = Daily(stations.fetch(1), start, end)
-            data = data.normalize()
-            data = data.aggregate('1W')
-            data = data.interpolate()
-            df = data.fetch()
-            if weather is None:
-                # Same (deterministic) weather for all locations, monthly (calendar year)
-                weather = df.iloc[:-1].reset_index().to_dict(orient='list')
-                for key in weather:
-                    if key != 'time':
-                        weather[key] = jnp.expand_dims(jnp.array(weather[key]), -1)
-            else:
-                tmp = df.iloc[:-1].reset_index().to_dict(orient='list')
-                for key in tmp:
-                    if key != 'time':
-                        weather[key] = jnp.concatenate([weather[key], jnp.expand_dims(jnp.array(tmp[key]), -1)], -1)
-
-        return weather
-
-    def create_reports(self):
+    def create_reports(self):  # TODO refacto and test
         """
         Create reports using the agent's model
         :return: a list of created reports
@@ -296,41 +262,7 @@ class RootsAndCultureAgent(AgentInterface, ABC):
         """
         return AutoMultivariateNormal(self.model)()
 
-    def pre_process(self, data):
-        """
-        Preprocess the data to fit the model requirements
-        :param data: the data
-        :return: the pre-processed data
-        """
-        # Retrieve maximum number of interventions
-        max_interventions = 1
-        for policy in data.policies:
-            mi = max([len(pi) for pi in policy])
-            if mi + 1 > max_interventions:
-                max_interventions = mi + 1
-
-        # Pre-process policies
-        policies = []
-        for policy in data.policies:
-            policies.append(self.policy_to_array(policy, max_interventions, self.name_integer))
-        data.policies = jnp.stack(policies, -2)
-        return data
-
-    @staticmethod
-    def policy_to_array(policy, max_num_interventions, name_integer):
-        def name_map(key):
-            return name_integer[key] if key is not None else key
-
-        int_policy = jtu.tree_map(name_map, policy)
-        arrays = []
-        for pi in int_policy:
-            arr = jnp.array(pi + [name_integer['base']])
-            arr = jnp.pad(arr, (0, max_num_interventions - len(arr)), constant_values=name_integer['base'])
-            arrays.append(arr)
-
-        return jnp.stack(arrays)
-
-    def global_parametric_model(self, data_level=3, mask=None, forecast=False, *args, **kwargs):
+    def get_parameters(self, data_level=3, mask=None, *args, **kwargs):
 
         length = len(self.data.policies)
 
@@ -409,20 +341,9 @@ class RootsAndCultureAgent(AgentInterface, ABC):
                     irrigation = sample("irrigation", Normal(loc, scale))
                     irrigation = jnp.clip(irrigation, a_min=0.)
 
-                if forecast:
-                    tmin = self.weather['tmin']
-                    tmax = self.weather['tmax']
-                    loc = self.weather['tavg']
-                    scale = (tmax - tmin) / 2
-                    temp = sample('temp', TruncatedNormal(loc, scale, high=tmax, low=tmin))
-                    prcp = sample('prcp', Gamma(jnp.clip(self.weather['prcp'], a_min=self.min_val) * 2, 2))
-                    water_volume = irrigation + prcp
-                else:
-                    water_volume = irrigation + self.weather['prcp'][:length]
-                    temp = self.weather['tavg'][:length]
+                water_volume = irrigation
 
         effects['water'] = deterministic('water_effect', self.water_to_rate(water_volume))
-        effects['temp'] = deterministic('temp_effect', self.temp_to_rate(temp))
         effects['seeding'] = deterministic('seeds_planted_per_are', jnp.clip(_seeds, a_min=0.))
 
         return effects, coefficients, mask, data_level
@@ -447,9 +368,10 @@ class RootsAndCultureAgent(AgentInterface, ABC):
         return - size * (x - lower) * (x - upper)
 
     def model(self, *args, **kwargs):
-        return self.deterministic_dynamics(*self.global_parametric_model(*args, **kwargs))
+        parameters = self.get_parameters(*args, **kwargs)
+        return self.model_dynamics(**parameters)
 
-    def deterministic_dynamics(self, effects, coefficients, mask, data_level):
+    def model_dynamics(self, effects, coefficients, mask, data_level):
         # Initial states
         soil_nutrients = jnp.ones(self.n_lots) * 0.1
         soil_biomass = jnp.ones(self.n_lots) * 0.1

@@ -2,7 +2,7 @@ from numpyro.infer import Predictive
 from numpyro.infer import Trace_ELBO, SVI
 from numpyro.optim import Adam
 from jax import random
-from fangorn.kernels.KernelInterface import KernelInterface
+from digital_gaia.fangorn.kernels.KernelInterface import KernelInterface
 
 
 class SVIKernel(KernelInterface):

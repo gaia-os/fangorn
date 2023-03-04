@@ -8,8 +8,8 @@ import geopandas as gpd
 import pandas as pd
 from pathlib import Path
 import json
-from fangorn.pydantic.Project import Project
-from fangorn.pydantic.Report import Report
+from digital_gaia.fangorn.pydantic.Project import Project
+from digital_gaia.fangorn.pydantic.Report import Report
 
 
 class DataLoader:
