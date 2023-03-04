@@ -1,0 +1,29 @@
+{
+  "id": "1cdf3e2b-2198-4d95-a555-84557557f855",
+  "datetime": "2021-10-08",
+  "location": {
+    "coordinates": [-89.56181335449219, 45.096866607666016],
+    "type": "Point"
+  },
+  "project_name": "Roots-and-Culture.roots-indoor1.json",
+  "reporter": "rob@element.6.com",
+  "provenance": "https://api.element.6.com/get_data?12345",
+  "observations": [
+    {
+      "name": "v0.measurement.base.agriculture.Yield.HempYield.Continuous",
+      "lot_name": "lot_0",
+      "value": [10.521612167358398]
+    },
+    {
+      "name": "v0.measurement.base.agriculture.PlantHeight.HempHeight.Continuous",
+      "lot_name": "lot_0",
+      "value": [36.21848678588867]
+    },
+    {
+      "name": "v0.measurement.base.agriculture.PlantDensity.HempDensity.Continuous",
+      "lot_name": "lot_0",
+      "value": [3.308253765106201]
+    }
+  ],
+  "evidence": []
+}
