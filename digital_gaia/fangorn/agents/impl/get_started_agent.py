@@ -146,17 +146,16 @@ class GetStartedAgent(AgentInterface):
         """
         return self.action_names.index(action_name)
 
-    def model_dynamic(self, states_t, values_t):
+    def model_dynamic(self, states_t, actions_performed):  # TODO update in notebook
         """
         Implement the model dynamic
         :param states_t: the state of the lot at time t
-        :param values_t: the current time step, the growth rate and the actions performed at time t
+        :param actions_performed: the current time step, the growth rate and the actions performed at time t
         :return: the states at time t + 1
         """
 
-        # Unpack the states and values at time t
+        # Unpack the states at time t
         hemp_size_t, hemp_can_grow_t, hemp_growth_rate = states_t
-        t, actions_performed = values_t
 
         # Ensure the model can be used with several lots, i.e., duplicate the model for each lot
         with plate('n_lots', self.n_lots):
@@ -176,7 +175,7 @@ class GetStartedAgent(AgentInterface):
 
         return (hemp_size_t1, hemp_can_grow_t1, hemp_growth_rate), None
 
-    def model(self, *args, time_horizon=-1, **kwargs):
+    def model(self, *args, time_horizon=-1, **kwargs):  # TODO update in notebook
         """
         The generative model of the agent
         :param args: unused positional arguments
@@ -197,13 +196,11 @@ class GetStartedAgent(AgentInterface):
             # Sample the hemp growth rate from a Gamma distribution
             hemp_grow_rate = sample("hemp_growth_rate", Gamma(3, 0.06))
 
-        # Make sure all the inputs of the scan function have the same size
-        time_indices = jnp.expand_dims(jnp.expand_dims(jnp.arange(0, time_horizon), axis=1), axis=2)
-        time_indices = jnp.repeat(time_indices, self.n_lots, axis=1)
+        # Create the policy corresponding to the time horizon of planning
         policy = self.policy[:time_horizon]
 
         # Call the scan function that unroll the model over time
-        scan(self.model_dynamic, (hemp_size, hemp_can_grow, hemp_grow_rate), (time_indices, policy))
+        scan(self.model_dynamic, (hemp_size, hemp_can_grow, hemp_grow_rate), policy)
 
     def guide(self, model, *args, **kwargs):
         """

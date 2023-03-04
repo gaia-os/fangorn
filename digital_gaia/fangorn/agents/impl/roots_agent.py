@@ -1,131 +1,93 @@
-from meteostat import Stations, Daily
-from datetime import datetime
-from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.PlantDensity import HempDensity
-from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.PlantHeight import HempHeight
 from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
 from digital_gaia.fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.BioChar import UseBioChar as UseBioChar
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Planting import PlantingSeeds as PlantingSeeds
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Fertilizer import FertilizeSoil as FertilizeSoil
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.AlfalfaCompost import UseAlfalfaCompost as UseAlfalfaCompost
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.VermiCompost import UseVermiCompost as UseVermiCompost
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.CowManure import UseCowManure as UseCowManure
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Mycorrhizae import UseMycorrhizae as UseMycorrhizae
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Irrigation import IrrigateCrops as IrrigateCrops
-from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Pesticide import SpreadPesticide as SpreadPesticide
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Pruning import PruneCrops as PruneCrops
-from digital_gaia.fangorn.pydantic.Report import Report
-from digital_gaia.fangorn.pydantic.Observation import Observation
 from numpyro.infer.autoguide import AutoMultivariateNormal
 from jax.tree_util import tree_map
-import jax.tree_util as jtu
 from jax.numpy import stack, pad, array
-from datetime import timedelta
 from digital_gaia.fangorn.agents.AgentInterface import AgentInterface
+from scipy.stats import norm
 import jax.numpy as jnp
 import numpy as np
-from numpyro import sample, deterministic, handlers, plate
+from numpyro import deterministic, plate
 from numpyro.contrib.control_flow import scan
-from numpyro.infer.reparam import TransformReparam, LocScaleReparam
-from numpyro.distributions import FoldedDistribution, Normal, LogNormal, Gamma, InverseGamma, Uniform, TruncatedNormal
-from digital_gaia.fangorn.models.likelihoods import ElementSix as Likelihood
-from abc import ABC
+
+# TODO this needs to be moved in the ontology, no sure where
+from enum import IntEnum
+class SoilType(IntEnum):
+    """
+    The variable representing the type of soil.
+    """
+    VeryCoarseSands = 0
+    CoarseSands = 1
+    FineSands = 2
+    LoamySands = 3
+    SandyLoams = 4
+    FineSandyLoams = 5
+    VeryFineSandyLoams = 6
+    Loams = 7
+    SiltLoams = 8
+    ClayLoams = 9
+    SiltyClayLoams = 10
+    SandyClayLoams = 11
+    SandyClays = 12
+    SiltyClays = 13
+    Clays = 14
+
+# TODO this needs to be moved in the ontology, no sure where
+from enum import IntEnum
+class SoilOrganicMatter(IntEnum):
+    """
+    The variable representing the soil organic matter.
+    """
+    Continuous = 0
 
 
-class RootsAndCultureAgent(AgentInterface, ABC):
+class RootsAndCultureAgent(AgentInterface):
+    """
+    # TODO is that correct?
+    # TODO is there a better way to describe it?
+    A class implementing an agent specialised for roots and culture.
+    """
 
     # The agent's species
     species = [
-        AgentInterface.ontology_name(PlantSpecies, "Hemp"),
-        AgentInterface.ontology_name(PlantSpecies, "Alfalfa")
+        AgentInterface.ontology_name(PlantSpecies, "Hemp")
     ]
 
     # The agent's actions
     actions = [
-        AgentInterface.ontology_name(HarvestCrops, "Hemp"),
-        AgentInterface.ontology_name(HarvestCrops, "Alfalfa"),
-        AgentInterface.ontology_name(UseBioChar, "Yes"),
         AgentInterface.ontology_name(PlantingSeeds, "HempSeeds"),
-        AgentInterface.ontology_name(PlantingSeeds, "AlfalfaSeeds"),
-        AgentInterface.ontology_name(FertilizeSoil, "No"),
-        AgentInterface.ontology_name(UseAlfalfaCompost, "Yes"),
-        AgentInterface.ontology_name(UseVermiCompost, "Yes"),
-        AgentInterface.ontology_name(UseCowManure, "Yes"),
-        AgentInterface.ontology_name(UseMycorrhizae, "Yes"),
-        AgentInterface.ontology_name(IrrigateCrops, "Yes"),
-        AgentInterface.ontology_name(SpreadPesticide, "Yes"),
-        AgentInterface.ontology_name(PruneCrops, "Yes")
+        AgentInterface.ontology_name(HarvestCrops, "Hemp"),
+        AgentInterface.ontology_name(PruneCrops, "Yes"),
+        AgentInterface.ontology_name(FertilizeSoil, "Yes"),
+        AgentInterface.ontology_name(IrrigateCrops, "Yes")
     ]
 
     def __init__(self, data):
+        """
+        Construct the roots and culture agent
+        :param data: an instance of the data loader containing information about the available reports and lots.
+        """
         # Call parent constructor
         obs_to_site = {
-            AgentInterface.ontology_name(HempYield, "Continuous"): "obs_yield_density",
-            AgentInterface.ontology_name(HempHeight, "Continuous"): "obs_plant_height",
-            AgentInterface.ontology_name(HempDensity, "Continuous"): "obs_plant_density"
+            AgentInterface.ontology_name(HempYield, "Continuous"): "obs_yield",
+            AgentInterface.ontology_name(SoilOrganicMatter, "Continuous"): "obs_soil_organic_matter"
         }
         super().__init__("Roots-and-Culture.roots-indoor1.Deterministic", data, obs_to_site)
 
-        self.n_species = 1  # TODO = len(self.data.project.strategies[0].species)
-
-        self.time_horizon = 1
+        # Store lot information
         self.n_lots = len(self.data.project.lots)
-
-        self.min_val = jnp.finfo(float).eps
-
-        self.likelihood = Likelihood()
-
-        self.params = dict(
-            seeds_planted=10.0,
-            irrigation=1,
-            rain=1,
-            soil_biomass=.1,
-            soc_std=.1,
-            count_std=.05,
-            height_std=.1,
-            harvest_concentration=10.,
-            survival_rate_noise=.1,
-            effect_sizes=.1,
-            satellite_soc=0.1,
-            satellite_plant_biomass=100,
-            satellite_plant_biomass_carbon=100,
-            sentinel_bands=100
-        )  # TODO some of these parameters are plant specific
-
-        lot_area = jnp.array([100.] * self.n_lots)  # ha, update with calculation based on polygon coordinates
-        self.area = jnp.expand_dims(lot_area * 100, -1)
-        n_lng, n_lat = (10, 10)
-        self.pixel_area = lot_area / (n_lng * n_lat)
-
-        self.loc_max_plant_height = jnp.array([2.0] * self.n_species)
-        self.plant_height_to_biomass = jnp.array([10.0] * self.n_species)
-        self.seeds_planted_weekly = jnp.array([50000] * self.n_species)  # n, per species
-        self.max_weekly_harvest = jnp.array([1000000] * self.n_species)  # kg, total
-
-        self.irrigation_weekly = jnp.array([100] * self.n_lots)
-
-        self.N_satellite_obs = n_lng * n_lat
-
-        self.params['lot_area'] = lot_area
-        self.params['soil_biomass_to_soc'] = jnp.array([0.45] * self.n_lots)
-        self.params['plant_height_to_biomass'] = self.plant_height_to_biomass
-        self.params['plant_biomass_to_carbon'] = jnp.array([0.45] * self.n_species)
-
-        # collect names of all possible interventions
-        self.interventions = {'base'}
-        for strategy in self.data.project.strategies:
-            self.interventions = self.interventions.union(set(strategy.interventions))
-        self.name_integer = {k: v + 1 for v, k in enumerate(sorted(self.interventions))}
+        # TODO this should be computed based on the polygon coordinates
+        self.lot_area = jnp.array([100.] * self.n_lots)  # TODO change that to make it realistic
+        self.lot_area = jnp.expand_dims(self.lot_area, -1)
 
         # Store actions information
-        self.action_names = [
-            "planting-alfalfa", "harvest-alfalfa", "planting-hemp", "harvest-hemp", "irrigation",
-            "fertilizer", "vermi-compost", "myco", "manure", "pesticide", "biochar", "pruning",
-        ]
+        self.action_names = ["irrigation", "fertilizer", "pruning", "planting", "harvesting"]
         self.n_actions = len(self.action_names)
-
-        self.lots = list({lot.name for lot in self.data.lots})
 
         # Pre-process the default policies
         self.policy = stack([self.to_array(policy) for policy in data.policies], -2)
@@ -142,51 +104,6 @@ class RootsAndCultureAgent(AgentInterface, ABC):
 
         # Pad the actions to ensure they all have the same length
         return stack([pad(array(actions), (0, self.n_actions - len(actions))) for actions in policy])
-
-    def create_reports(self):  # TODO refacto and test
-        """
-        Create reports using the agent's model
-        :return: a list of created reports
-        """
-        # Predict the observations' value(s)
-        predictions = self.predict(model=self.model if self.conditioned_model is None else self.model, num_samples=1)
-
-        # Create the reports
-        reports = []
-        locations = self.get_report_locations()
-        start_date = self.data.project.start_date
-        for t in range(1, self.data.T + 1):
-            for lot_index in range(len(self.data.project.lots)):
-                # Collect the observation from the predictions
-                observations = []
-                for obs_name in self.sample_sites():
-                    observation = {
-                        "name": obs_name,
-                        "lot_name": self.data.lots[lot_index].name,
-                        "value": predictions[obs_name][0][t - 1][lot_index]
-                    }
-                    observations.append(Observation(**observation))
-
-                # Create the report
-                report = Report(
-                    datetime=start_date,
-                    location=self.to_point(locations[lot_index, 55]),
-                    project_name=self.name,
-                    reporter='rob@element.six.com',
-                    provenance="https://api.element.six.com/get_data?12345",
-                    observations=observations
-                )
-                reports.append(report)
-                start_date += timedelta(days=7)
-
-        return reports
-
-    def set_time_horizon(self, t):
-        """
-        Set the new time horizon
-        :param t: the new time horizon
-        """
-        self.time_horizon = t
 
     def add_reports(self, reports):
         """
@@ -262,213 +179,386 @@ class RootsAndCultureAgent(AgentInterface, ABC):
         """
         return AutoMultivariateNormal(self.model)()
 
-    def get_parameters(self, data_level=3, mask=None, *args, **kwargs):
-
-        length = len(self.data.policies)
-
-        # Time-independent RVs
-        effects = {
-            'soil': {
-                k: sample(f"soil_effect_{k}", Normal(v, self.params['effect_sizes']))
-                for k, v in {"base": 0., "biochar": 0.3}.items()
-            },
-            'survival': {
-                k: sample(f"survival_effect_{k}", Normal(v, self.params['effect_sizes']))
-                for (k, v) in {"base": 0., "biochar": 0.1, "fertilizer": 0.05, "vermi-compost": 0.05}.items()
-            },
-            'growth': {
-                k: sample(f"growth_effect_{k}", Normal(v, self.params['effect_sizes']))
-                for k, v in {"base": 0., "biochar": 0.1, "fertilizer": 0.1, "myco": 0.05, "manure": 0.02}.items()
-            },
-            'nutrients': {
-                # TODO: biochar and fertiliser are not directly nutrients, nitrogen is
-                # TODO: do we want to model that?
-                k: sample(f"nutrient_effect_{k}", Normal(v, self.params['effect_sizes']))
-                for k, v in {"biochar": 0.4, "fertilizer": 0.1}.items()
-            }
-        }
-        effects['nutrients']['base'] = 0.
-
-        coefficients = {
-            'survival': {
-                'soil_biomass': sample("soil_biomass_to_ps", Normal(0.5, self.params['effect_sizes'])),
-                'plant_density': sample("plant_density_to_ps", Normal(-0.5, self.params['effect_sizes'])) / 10000
-            },
-            'height': {
-                'soil_biomass': sample("soil_biomass_to_ph", Normal(.5, self.params['effect_sizes'])),
-                'plant_density': sample("plant_density_to_ph", Normal(-.5, self.params['effect_sizes'])) / 10000
-            }
+    @staticmethod
+    def get_wilting_point():
+        """
+        Getter
+        :return: a dictionary whose keys are soil types and values are the associated wilting point
+        """
+        return {  # TODO check that these values are correct
+            SoilType.VeryCoarseSands: 3.333,
+            SoilType.CoarseSands: 6.25,
+            SoilType.FineSands: 6.25,
+            SoilType.LoamySands: 6.25,
+            SoilType.SandyLoams: 10.416,
+            SoilType.FineSandyLoams: 10.416,
+            SoilType.VeryFineSandyLoams: 12.5,
+            SoilType.Loams: 12.5,
+            SoilType.SiltLoams: 12.5,
+            SoilType.ClayLoams: 14.583,
+            SoilType.SiltyClayLoams: 14.583,
+            SoilType.SandyClayLoams: 14.583,
+            SoilType.SandyClays: 13.333,
+            SoilType.SiltyClays: 13.333,
+            SoilType.Clays: 13.333
         }
 
+    @staticmethod
+    def get_saturation_point():
+        """
+        Getter
+        :return: a dictionary whose keys are soil types and values are the associated saturation point
+        """
+        return {  # TODO check that these values are correct
+            SoilType.VeryCoarseSands: 6.25,
+            SoilType.CoarseSands: 10.416,
+            SoilType.FineSands: 10.416,
+            SoilType.LoamySands: 10.416,
+            SoilType.SandyLoams: 14.583,
+            SoilType.FineSandyLoams: 14.583,
+            SoilType.VeryFineSandyLoams: 19.166,
+            SoilType.Loams: 19.166,
+            SoilType.SiltLoams: 19.166,
+            SoilType.ClayLoams: 20.833,
+            SoilType.SiltyClayLoams: 20.833,
+            SoilType.SandyClayLoams: 20.833,
+            SoilType.SandyClays: 20.833,
+            SoilType.SiltyClays: 20.833,
+            SoilType.Clays: 20.833
+        }
+
+    @staticmethod
+    def get_soil_organic_matter():
+        """
+        Getter
+        :return: a dictionary whose keys are soil types and values are the associated soil organic matter
+        """
+        return {  # TODO change that to make it realistic
+            SoilType.VeryCoarseSands: 2,
+            SoilType.CoarseSands: 2,
+            SoilType.FineSands: 2,
+            SoilType.LoamySands: 2,
+            SoilType.SandyLoams: 2,
+            SoilType.FineSandyLoams: 2,
+            SoilType.VeryFineSandyLoams: 2,
+            SoilType.Loams: 2,
+            SoilType.SiltLoams: 2,
+            SoilType.ClayLoams: 2,
+            SoilType.SiltyClayLoams: 2,
+            SoilType.SandyClayLoams: 2,
+            SoilType.SandyClays: 2,
+            SoilType.SiltyClays: 2,
+            SoilType.Clays: 2
+        }
+
+    def get_parameters(self, time_horizon):
+        """
+        Getter
+        :param time_horizon: the time horizon of planning
+        :return: a dictionary containing the model's parameters
+        """
+
+        # TODO is there some uncertainty about the parameters?
+
+        # TODO is there a need for different parameters for different lots?
+        #  For example, different soil_types/max_root_depth/etc... in different lots
+        # with plate('num_lots', self.n_lots):
+        #     parameters['key'] = sample('key', Normal(0, 1))
+
+        return {
+            "growth_function": self.get_growth_function(time_horizon),
+            "max_growth_rate": 0.5,  # TODO change that to make it realistic
+            "evaporation_rate": 0.5,  # TODO change that to make it realistic
+            "soil_type": SoilType.Clays,  # TODO you may want to change that to fit your needs
+            "lot_area": self.lot_area,
+            "max_root_depth": 0.5,  # TODO change that to make it realistic
+            "max_evapotranspiration_rate": 0.5,  # TODO change that to make it realistic
+            "yield_potential": 0.5,  # TODO change that to make it realistic
+            "saturation_point": self.get_saturation_point(),
+            "wilting_point": self.get_wilting_point(),
+            "soil_organic_matter": self.get_soil_organic_matter(),
+            "n_seeds": 84,  # TODO you may want to change that to fit your needs
+            "time_delta": 1,  # TODO change that to make it realistic, it is equal to 1 week and to compute plant size
+        }
+
+    @staticmethod
+    def get_growth_function(time_horizon):
+        """
+        Compute the mean of the Gaussian modelling the growth rate over time
+        :param time_horizon: the time horizon of planning
+        :return: the mean
+        """
+
+        # Inflection points are given by the Gaussian mean plus or minus its standard deviation, thus the mean is:
+        mean = time_horizon / 2
+
+        # Inflection points are given by the Gaussian mean plus or minus its standard deviation (std), thus the std is:
+        std = time_horizon / 6
+
+        # Create the gaussian distribution modelling the growth rate
+        gaussian = norm(mean, std)
+
+        # Return the growth function
+        return lambda x: gaussian.pdf(0)
+
+    def index_of(self, action_name):
+        """
+        Getter
+        :param action_name: the name of the action whose index must be returned
+        :return: the action index
+        """
+        return self.action_names.index(action_name)
+
+    def is_performed(self, action, actions_performed):
+        """
+        Check whether an action is performed
+        :param action: the action for which the check is done
+        :param actions_performed: all the performed actions
+        :return: True if the action is performed, False otherwise
+        """
+        return jnp.any(self.index_of(action) + 1 == actions_performed, -1)
+
+    def model_dynamic(self, states_t, values_t):
+        """
+        Implement the model dynamic
+        :param states_t: the states of the lots at time t
+        :param values_t: the values at time t
+        :return: the states at time t + 1
+        """
+
+        # Unpack the states at time t
+        plant_count_t, \
+            plant_size_t, \
+            soil_organic_matter_t, \
+            growth_rate_t, \
+            parameters = states_t
+
+        # Unpack the values at time t
+        t, actions_performed = values_t
+
+        # TODO implement code below
         with plate('num_lots', self.n_lots):
-            self.params['max_height'] = sample('max_plant_height', LogNormal(jnp.log(self.loc_max_plant_height), .1).to_event(1))
 
-            if data_level > 1:
-                self.params['count_prec'] = 10 * sample('count_prec', Gamma(10, 10))
-                self.params['height_prec'] = 10 * sample('height_prec', Gamma(10, 10))
+            # Check if planting, fertilising, pruning, harvesting and irrigation are performed at time t
+            plant = self.is_performed("planting", actions_performed)
+            harvest = self.is_performed("harvesting", actions_performed)
+            fertilize = self.is_performed("fertilizer", actions_performed)
+            prune = self.is_performed("pruning", actions_performed)
+            irrigate = self.is_performed("irrigation", actions_performed)
 
-            self.params['lai_beta'] = sample('lai_beta', Gamma(2, 2))
-            self.params['lai_alpha'] = sample('lai_alpha', Gamma(2, 2))
-            self.params['lai_scale'] = jnp.sqrt(sample('lai_var', InverseGamma(2, 2)))
+            # Compute the number of plants at time t + 1
+            plant_count_t1 = self.compute_plant_count(plant_count_t, plant, harvest, parameters["n_seeds"])
 
-            # seeds per Are - from 25 seeds for CBD crop up to 3000 seeds for seed crop
-            # n per Are per species
-            seeds_planted_weekly = sample(
-                'planted_seeds', Uniform(jnp.array([25] * self.n_species), jnp.array([3000] * self.n_species)).to_event(1))
+            # Compute the plant size at time t + 1
+            plant_size_t1 = self.compute_plant_size(plant_size_t, growth_rate_t, prune, parameters["time_delta"])
 
-            # maximum weekly harvest kg per are
-            max_weekly_harvest = sample(
-                'max_weekly_harvest', Uniform(jnp.array([10] * self.n_species), jnp.array([1000] * self.n_species)).to_event(1))
-            self.params['max_weekly_harvest'] = max_weekly_harvest
+            # Compute the soil organic matter at time t + 1
+            soil_organic_matter_t1 = self.compute_soil_organic_matter(
+                soil_organic_matter_t, plant_size_t, plant_count_t, parameters["lot_area"], prune, fertilize
+            )
 
-            # weekly irrigation
-            irrigation_weekly = sample('weekly_irrigation', Uniform(50., 150.))
+            # Compute the evapotranspiration rate at time t + 1
+            evapotranspiration_rate_t1 = self.compute_evapotranspiration_rate(
+                plant_count_t1, plant_size_t, plant_size_t1, parameters["max_evapotranspiration_rate"]
+            )
 
-            # time dependent variables
-            with plate('num_weeks', length):
-                plant = jnp.expand_dims(jnp.any(self.data.policies == self.name_integer['planting-hemp'], -1), -1)
-                loc = seeds_planted_weekly * plant - 10 * (1 - plant)
-                scale = self.params['seeds_planted'] * plant + (1 - plant) / 10
+            # Compute the soil water status at time t + 1
+            soil_water_status_t1 = self.compute_soil_water_status(
+                evapotranspiration_rate_t1, parameters["evaporation_rate"], irrigate
+            )
 
-                with handlers.reparam(config={"_seeds": LocScaleReparam(0)}):
-                    _seeds = sample("_seeds", Normal(loc, scale).to_event(1))
+            # Compute the growth rate at time t + 1
+            growth_rate_t1 = self.compute_growth_rate(
+                parameters["growth_function"], t, soil_water_status_t1, fertilize, parameters["max_growth_rate"]
+            )
 
-                irrigate = jnp.any(self.data.policies == self.name_integer['irrigation'], -1)
-                loc = irrigation_weekly * irrigate - 10 * (1 - irrigate)
-                scale = self.params['irrigation'] * irrigate + (1 - irrigate) / 10
+            # Computed the expected observed yield at time t + 1
+            self.compute_yield(plant_count_t1, plant_size_t1, harvest, parameters["yield_potential"])
 
-                with handlers.reparam(config={"irrigation": LocScaleReparam(0)}):
-                    irrigation = sample("irrigation", Normal(loc, scale))
-                    irrigation = jnp.clip(irrigation, a_min=0.)
+            # Computed the expected observed soil organic matter at time t + 1
+            self.compute_obs_soil_organic_matter(soil_organic_matter_t1)
 
-                water_volume = irrigation
-
-        effects['water'] = deterministic('water_effect', self.water_to_rate(water_volume))
-        effects['seeding'] = deterministic('seeds_planted_per_are', jnp.clip(_seeds, a_min=0.))
-
-        return effects, coefficients, mask, data_level
-
-    @staticmethod
-    def sample_folded_normal(name, base_dist):
-        with handlers.reparam(config={name: TransformReparam()}):
-            return sample(name, FoldedDistribution(base_dist))
-
-    def water_to_rate(self, volume, lower=-10, upper=360):
-        opt = (lower + upper) / 2
-        size = 1 / self.parabola(lower, upper, 1, opt)
-        return jnp.clip(-1 + self.parabola(lower, upper, size, volume), a_min=-1., a_max=0.)
-
-    def temp_to_rate(self, temperature, lower=-5, upper=49):
-        opt = (lower + upper) / 2
-        size = 1 / self.parabola(lower, upper, 1, opt)
-        return jnp.clip(-1 + self.parabola(lower, upper, size, temperature), a_min=-1, a_max=0.)
+        # Create the states at time t + 1
+        states_t1 = (
+            plant_count_t1,
+            plant_size_t1,
+            soil_organic_matter_t1,
+            growth_rate_t1,
+            parameters
+        )
+        return states_t1, None
 
     @staticmethod
-    def parabola(lower, upper, size, x):
-        return - size * (x - lower) * (x - upper)
+    def compute_soil_water_status(evapotranspiration_rate_t1, evaporation_rate, irrigate):
+        """
+        Computed the soil water status at time t + 1
+        :param evapotranspiration_rate_t1: the soil organic matter at time t
+        :param evaporation_rate: a constant representing the evaporation rate
+        :param irrigate: whether irrigation is performed
+        :return: the soil water status at time t + 1
+        """
+        return deterministic('soil_water_status', irrigate)  # TODO this does not work obviouslycd
 
-    def model(self, *args, **kwargs):
-        parameters = self.get_parameters(*args, **kwargs)
-        return self.model_dynamics(**parameters)
+    @staticmethod
+    def compute_soil_organic_matter(soil_organic_matter_t, plant_size_t, plant_count_t, lot_area, prune, fertilize):
+        """
+        Computed the soil organic matter at time t + 1
+        :param soil_organic_matter_t: the soil organic matter at time t
+        :param plant_size_t: the plant size at time t
+        :param plant_count_t: the plant count at time t
+        :param lot_area: the lot's area
+        :param prune: whether pruning is performed
+        :param fertilize: whether fertilizing is performed
+        :return: the soil organic matter at time t + 1
+        """
 
-    def model_dynamics(self, effects, coefficients, mask, data_level):
-        # Initial states
-        soil_nutrients = jnp.ones(self.n_lots) * 0.1
-        soil_biomass = jnp.ones(self.n_lots) * 0.1
-        plant_density = jnp.zeros((self.n_lots, self.n_species))
-        plant_height = jnp.zeros((self.n_lots, self.n_species))
+        # Compute the effect of only pruning
+        prune_effect = (plant_count_t * plant_size_t * 0.02) / lot_area
+        only_prune = prune * (1 - fertilize)
+        soil_organic_matter_t1 = soil_organic_matter_t + prune_effect * soil_organic_matter_t * only_prune
 
-        init = (soil_nutrients, soil_biomass, plant_density, plant_height)
+        # Compute the effect of only fertilizing
+        only_fertilize = fertilize * (1 - prune)
+        soil_organic_matter_t1 = soil_organic_matter_t1 + 0.01 * soil_organic_matter_t * only_fertilize
 
-        # Time steps
-        def step_fn(carry, xs):
+        # Compute the effect of both pruning and fertilizing
+        prune_and_fertilize = fertilize * prune
+        both_effect = (plant_count_t * plant_size_t * 0.04) / lot_area
+        soil_organic_matter_t1 = soil_organic_matter_t1 + both_effect * soil_organic_matter_t * prune_and_fertilize
 
-            events, _water_effect, _temp_effect, num_seeds, _mask = xs
-            _soil_nutrients, _soil_biomass, _plant_density, _plant_height = carry
+        return deterministic('soil_organic_matter', soil_organic_matter_t1)
 
-            # Compute the total effect of interventions on soil, plant survival, and plant growth
-            mod_nutrients = jnp.stack([
-                eff * jnp.any(events == self.name_integer[inter], -1) for (inter, eff) in effects['nutrients'].items()
-            ], -1).sum(-1)
+    @staticmethod
+    def compute_obs_soil_organic_matter(soil_organic_matter_t1):
+        """
+        Computed the expected observed soil organic matter at time t + 1
+        :param soil_organic_matter_t1: the true soil organic matter in the system at time t + 1
+        :return: the expected observed soil organic matter at time t + 1
+        """
+        # TODO do we want to model the uncertainty of the measurement as a Gaussian?
+        return deterministic('obs_soil_organic_matter', soil_organic_matter_t1)
 
-            mod_soil = jnp.stack([
-                eff * jnp.any(events == self.name_integer[inter], -1) for (inter, eff) in effects['soil'].items()
-            ], -1).sum(-1)
+    @staticmethod
+    def compute_plant_size(plant_size_t, growth_rate_t, pruning, time_delta):
+        """
+        Compute the plant size at time t + 1
+        :param plant_size_t: the plant size at time t
+        :param growth_rate_t: the growth rate at time t
+        :param pruning: whether pruning is performed
+        :param time_delta: the real-life duration between two time steps modeled by the agent
+        :return: the plant size at time t + 1
+        """
 
-            mod_survival = jnp.stack([
-                eff * jnp.any(events == self.name_integer[inter], -1) for (inter, eff) in effects['survival'].items()
-            ], -1).sum(-1)
+        # Apply the immediate reduction in plant size caused by pruning
+        pruning_effect = 1 - 0.2 * pruning
+        plant_size_t1 = plant_size_t * pruning_effect
 
-            mod_growth = jnp.stack([
-                eff * jnp.any(events == self.name_integer[inter], -1) for (inter, eff) in effects['growth'].items()
-            ], -1).sum(-1)
+        # Apply the immediate reduction in plant size due to the effect of pruning
+        pruning_effect = 1 + 0.1 * pruning
+        plant_size_t1 = plant_size_t1 + plant_size_t * growth_rate_t * time_delta * pruning_effect
+        return deterministic('plant_size', plant_size_t1)
 
-            with plate('num_lots', self.n_lots):
-                # dynamics
-                r = 0.99
-                soil_nutrients = deterministic('soil_nutrients',
-                                               jnp.clip(_soil_nutrients * r + mod_nutrients, a_min=0., a_max=1.))
-                sn_eff1 = soil_nutrients - 1.
-                sn_eff2 = jnp.clip(soil_nutrients - .05, a_min=0., a_max=1) - 1.
+    @staticmethod
+    def compute_growth_rate(growth_function, t, soil_water_status_t1, fertiliser, max_growth_rate):
+        """
+        Compute the growth rate at time t + 1
+        :param growth_function: the function defining the plant growth for each time step
+        :param t: the time step t
+        :param soil_water_status_t1: the soil water status at time t + 1
+        :param fertiliser: whether some fertiliser is applied
+        :param max_growth_rate: the maximum growth rate of the plant
+        :return: the growth rate at time t + 1
+        """
 
-                # Compute new soil biomass
-                eta_max = 0.1 + 0.9 * jnp.heaviside(_plant_density - 1 / self.area, 1.).mean(-1)
-                soil_bio_rate = mod_soil + _water_effect
-                kappa = (1 + soil_bio_rate) / 52
-                r = jnp.clip(1 - jnp.exp(-kappa), a_min=0., a_max=1.)
-                soil_biomass = deterministic('soil_biomass', _soil_biomass + r * (eta_max - _soil_biomass))
+        # Compute the effect of the fertiliser on the growth rate at time t + 1
+        fertiliser_effect = 1 + 0.1 * fertiliser
 
-                # Ensure the soil_biomass' shape is correct
-                assert soil_biomass.shape == (self.n_lots,)
+        # Compute the growth rate at time t + 1
+        growth_rate_t1 = growth_function(t + 1) * soil_water_status_t1 * fertiliser_effect
+        return deterministic('growth_rate', jnp.clip(growth_rate_t1, a_min=0, a_max=max_growth_rate))
 
-                # TODO is this plant specific
-                # Compute the new plant height
-                growth_rate = jnp.expand_dims(
-                    _soil_biomass * coefficients['height']['soil_biomass'] + _water_effect + _temp_effect + sn_eff2 +
-                    mod_growth, -1
-                ) + _plant_density * coefficients['height']['plant_density']
-                kappa = (1 + growth_rate) / 4
-                r = jnp.clip(1 - jnp.exp(-kappa), a_min=0., a_max=1.)
-                plant_height = deterministic(
-                    'plant_height',
-                    (_plant_height + r * (self.params['max_height'] - _plant_height)) *
-                    jnp.heaviside(_plant_density - 1 / self.area, 1.)
-                )
+    @staticmethod
+    def compute_evapotranspiration_rate(plant_count_t1, plant_size_t, plant_size_t1, max_evapotranspiration_rate):
+        """
+        Compute the new evapotranspiration rate
+        :param plant_count_t1: the number of plants at time t + 1
+        :param plant_size_t: the plant size at time t
+        :param plant_size_t1: the plant size at time t + 1
+        :param max_evapotranspiration_rate: the maximum evapotranspiration rate
+        :return: the evapotranspiration rate at time t + 1
+        """
 
-                # Ensure the plant_height's shape is correct
-                assert plant_height.shape == (self.n_lots, self.n_species)
+        # Compute the average plant size over the week
+        average_plant_size = 0.5 * (plant_size_t + plant_size_t1)
 
-                # TODO is this plant specific
-                plant_unit_biomass = jnp.clip(plant_height * self.plant_height_to_biomass, a_min=1e-16)
-                survival_rate = jnp.expand_dims(_soil_biomass * coefficients['survival'][
-                    'soil_biomass'] + _water_effect + _temp_effect + mod_survival + sn_eff1, -1) + _plant_density * \
-                                coefficients['survival']['plant_density']
+        # Compute the evapotranspiration rate at time t + 1
+        evapotranspiration_rate_t1 = plant_count_t1 * average_plant_size * max_evapotranspiration_rate
+        return deterministic('evapotranspiration_rate', evapotranspiration_rate_t1)
 
-                # Ensure the survival_rate's shape is correct
-                assert survival_rate.shape == (self.n_lots, self.n_species)
+    @staticmethod
+    def compute_plant_count(plant_count_t, plant, harvest, n_seeds):
+        """
+        Compute the new plant count
+        :param plant_count_t: the plant count at time t
+        :param plant: whether planting is performed
+        :param harvest: whether harvesting is performed
+        :param n_seeds: the number of plant
+        :return: the plant count at time t + 1
+        """
+        return deterministic('plant_count', (plant_count_t + plant * n_seeds) * (1 - harvest))
 
-                # TODO is this plant specific
-                kappa = (1 + survival_rate) * 8.
-                r = deterministic('survival_probability', jnp.clip(1 - jnp.exp(-kappa), a_min=0., a_max=1.))
-                new_plant_density = r * _plant_density + num_seeds
+    @staticmethod
+    def compute_yield(plant_count, plant_size, harvest, yield_potential):
+        """
+        Compute the yield based on the system states and model's parameters
+        :param plant_count: the number of plants currently present
+        :param plant_size: the average size of the plants
+        :param harvest: whether harvesting is performed
+        :param yield_potential: the yield potential of the plant
+        :return: the expected yield
+        """
+        # TODO do we want to model the uncertainty of the measurement as a Gaussian?
+        return deterministic('obs_yield', plant_count * plant_size * yield_potential * harvest)
 
-                # TODO is this plant specific
-                harvest = jnp.expand_dims(jnp.any(self.name_integer['harvest-hemp'] == events, -1), -1)
-                harvest_yield = jnp.clip(
-                    new_plant_density * plant_unit_biomass, a_max=self.params['max_weekly_harvest']
-                ) * harvest
-                yield_per_m2 = deterministic('yield_density', harvest_yield)
+    def model(self, *args, time_horizon=-1, **kwargs):
+        """
+        Implement the generative model of the agent
+        :param args: unused positional arguments
+        :param time_horizon: the time horizon of planning, if it equals -1, the length of the current policy is used
+        :param kwargs: unused keyword arguments
+        """
 
-                # Ensure the harvest_yield's shape is correct
-                assert harvest_yield.shape == (self.n_lots, self.n_species)
+        # Make sure the time horizon is value
+        time_horizon = len(self.policy) if time_horizon == -1 else time_horizon
 
-                # TODO is this plant specific
-                plant_density = deterministic('plant_density', new_plant_density - harvest_yield / plant_unit_biomass)
+        # Create time indices from zero up to the time horizon
+        time_indices = jnp.expand_dims(jnp.expand_dims(jnp.arange(0, time_horizon), axis=1), axis=2)
+        time_indices = jnp.repeat(time_indices, self.n_lots, axis=1)
 
-                self.likelihood(
-                    soil_biomass, plant_density, plant_height, yield_per_m2, self.params, _mask, data_level=data_level
-                )
+        # Create the model's parameters
+        parameters = self.get_parameters(time_horizon)
 
-            return (soil_nutrients, soil_biomass, plant_density, plant_height), None
+        # Get the soil type
+        soil_type = parameters["soil_type"]
 
-        scan(step_fn, init, (self.data.policies, effects['water'], effects['temp'], effects['seeding'], mask))
+        # Initialise the states at time zero
+        plant_count = jnp.zeros(self.n_lots)
+        plant_size = jnp.zeros(self.n_lots)
+        soil_organic_matter = jnp.ones(self.n_lots) * parameters["soil_organic_matter"][soil_type]
+        evapotranspiration_rate = jnp.zeros(self.n_lots)
+        growth_rate = jnp.zeros(self.n_lots)
+        soil_water_status = jnp.zeros(self.n_lots)
+
+        # Create the initial states
+        initial_states = (
+            plant_count,
+            plant_size,
+            soil_organic_matter,
+            evapotranspiration_rate,
+            growth_rate,
+            soil_water_status,
+            parameters
+        )
+
+        # Call the scan function that unroll the model over time
+        scan(self.model_dynamic, initial_states, (time_indices, self.policy[:time_horizon]))
