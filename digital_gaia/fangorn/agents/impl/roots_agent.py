@@ -397,7 +397,7 @@ class RootsAndCultureAgent(AgentInterface):
         :param irrigate: whether irrigation is performed
         :return: the soil water status at time t + 1
         """
-        return deterministic('soil_water_status', irrigate)  # TODO this does not work obviouslycd
+        return deterministic('soil_water_status', irrigate)  # TODO this does not work obviously
 
     @staticmethod
     def compute_soil_organic_matter(soil_organic_matter_t, plant_size_t, plant_count_t, lot_area, prune, fertilize):
