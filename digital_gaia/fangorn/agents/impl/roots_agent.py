@@ -249,7 +249,7 @@ class RootsAndCultureAgent(AgentInterface):
             "wilting_points": self.get_wilting_point(),
             "soil_organic_matters": self.get_soil_organic_matters(),
             "n_seeds": 84,  # TODO you may want to change that to fit your needs
-            "time_delta": 10000,  # TODO change that to make it realistic, it is equal to 1 week and to compute plant size
+            "time_delta": 1,  # TODO change that to make it realistic, it is equal to 1 week and to compute plant size
             "weekly_irrigation": 2,  # TODO you may want to change that to make it realistic
             "obs_soil_organic_matter_std": 0.2,  # TODO you may want to change that to make it realistic
             "obs_yield_std": 0.2  # TODO you may want to change that to make it realistic
@@ -619,10 +619,13 @@ class RootsAndCultureAgent(AgentInterface):
         :return: the expected yield
         """
 
+        # Get the mask corresponding to the yield
+        yield_mask = RootsAndCultureAgent.get_mask(mask, 'obs_yield')
+
         # Create the yield distribution
         obs_yield_mean = plant_count * plant_size * yield_potential * (1 - harvest)
         obs_yield_std = obs_yield_standard_dev * harvest
-        yield_distribution = Normal(obs_yield_mean, obs_yield_std).mask(True if mask is None else mask['obs_yield'])
+        yield_distribution = Normal(obs_yield_mean, obs_yield_std).mask(yield_mask)
 
         # Sample from the yield distribution
         return sample('obs_yield', yield_distribution)
@@ -637,9 +640,22 @@ class RootsAndCultureAgent(AgentInterface):
         :return: the expected observed soil organic matter at time t + 1
         """
 
+        # Get the mask corresponding to the soil organic matter
+        soil_organic_matter_mask = RootsAndCultureAgent.get_mask(mask, 'obs_soil_organic_matter')
+
         # Create the soil organic matter distribution
         som_distribution = Normal(soil_organic_matter_t1, obs_soil_organic_matter_std)
-        som_distribution = som_distribution.mask(True if mask is None else mask['obs_yield'])
+        som_distribution = som_distribution.mask(soil_organic_matter_mask)
 
         # Sample from the soil organic matter distribution
         return sample('obs_soil_organic_matter', som_distribution)
+
+    @staticmethod
+    def get_mask(mask, obs_name):
+        """
+        Getter
+        :param mask: all the observation masks
+        :param obs_name: the name of the observation whose mask needs to be retrieved
+        :return: the mask corresponding to the observation name
+        """
+        return True if mask is None or obs_name not in mask.keys() else mask[obs_name]
