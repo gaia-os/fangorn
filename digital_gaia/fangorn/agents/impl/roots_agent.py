@@ -1,3 +1,4 @@
+from jax.scipy.stats import norm
 from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
 from digital_gaia.fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
 from digital_gaia.fangorn.ontology.v1.management.base.agriculture.Harvest import HarvestCrops as HarvestCrops
@@ -9,11 +10,12 @@ from numpyro.infer.autoguide import AutoMultivariateNormal
 from jax.tree_util import tree_map
 from jax.numpy import stack, pad, array
 from digital_gaia.fangorn.agents.AgentInterface import AgentInterface
-from scipy.stats import norm
 import jax.numpy as jnp
 import numpy as np
 from numpyro import deterministic, plate
 from numpyro.contrib.control_flow import scan
+from numpyro.distributions import Normal
+from numpyro.primitives import sample
 
 # TODO this needs to be moved in the ontology, no sure where
 from enum import IntEnum
@@ -86,7 +88,6 @@ class RootsAndCultureAgent(AgentInterface):
         self.n_lots = len(self.data.project.lots)
         # TODO this should be computed based on the polygon coordinates
         self.lot_area = jnp.array([100.] * self.n_lots)  # TODO change that to make it realistic
-        self.lot_area = jnp.expand_dims(self.lot_area, -1)
 
         # Store actions information
         self.action_names = ["irrigation", "fertilizer", "pruning", "planting", "harvesting"]
@@ -103,7 +104,7 @@ class RootsAndCultureAgent(AgentInterface):
         """
 
         # Replace action names by their corresponding indices
-        policy = tree_map(lambda action: self.action_names.index(action) + 1 if action else action, policy)
+        policy = tree_map(lambda action: self.index_of(action) + 1 if action else action, policy)
 
         # Pad the actions to ensure they all have the same length
         return stack([pad(array(actions), (0, self.n_actions - len(actions))) for actions in policy])
@@ -182,6 +183,94 @@ class RootsAndCultureAgent(AgentInterface):
         """
         return AutoMultivariateNormal(self.model)()
 
+    def model(self, *args, time_horizon=-1, mask=None, **kwargs):
+        """
+        Implement the generative model of the agent
+        :param args: unused positional arguments
+        :param time_horizon: the time horizon of planning, if it equals -1, the length of the current policy is used
+        :param kwargs: unused keyword arguments
+        """
+
+        # Make sure the time horizon is value
+        time_horizon = len(self.policy) if time_horizon == -1 else time_horizon
+
+        # Create time indices from zero up to the time horizon
+        time_indices = jnp.arange(0, time_horizon)
+
+        # Create the model's parameters
+        parameters = self.get_parameters(time_horizon)
+
+        # Initialise the states at time zero
+        plant_count = jnp.zeros(self.n_lots)
+        plant_size = jnp.zeros(self.n_lots)
+        soil_organic_matter = jnp.ones(self.n_lots) * parameters["soil_organic_matter"]
+        growth_rate = jnp.zeros(self.n_lots)
+        wilting = jnp.ones(self.n_lots) * 0.5 * (parameters["saturation_point"] + parameters["wilting_point"])
+
+        # Create the initial states
+        initial_states = (
+            plant_count,
+            plant_size,
+            soil_organic_matter,
+            growth_rate,
+            wilting,
+            parameters
+        )
+
+        # Call the scan function that unroll the model over time
+        scan(self.model_dynamic, initial_states, (time_indices, self.policy[:time_horizon], mask))
+
+    def get_parameters(self, time_horizon):
+        """
+        Getter
+        :param time_horizon: the time horizon of planning
+        :return: a dictionary containing the model's parameters
+        """
+
+        # TODO is there some uncertainty about the parameters?
+
+        # TODO is there a need for different parameters for different lots?
+        #  For example, different soil_types/max_root_depth/etc... in different lots
+        # with plate('num_lots', self.n_lots):
+        #     parameters['key'] = sample('key', Normal(0, 1))
+
+        # Retrieve the default parameters
+        parameters = {
+            "growth_function_mean": self.get_growth_function_mean(time_horizon),
+            "growth_function_std": self.get_growth_function_std(time_horizon),
+            "max_growth_rate": 0.5,  # TODO change that to make it realistic
+            "evaporation_rate": 0.5,  # TODO change that to make it realistic
+            "soil_type": SoilType.Clays,  # TODO you may want to change that to fit your needs
+            "lot_area": self.lot_area,
+            "max_root_depth": 0.5,  # TODO change that to make it realistic
+            "max_evapotranspiration_rate": 0.5,  # TODO change that to make it realistic
+            "yield_potential": 0.5,  # TODO change that to make it realistic
+            "saturation_points": self.get_saturation_point(),
+            "wilting_points": self.get_wilting_point(),
+            "soil_organic_matters": self.get_soil_organic_matters(),
+            "n_seeds": 84,  # TODO you may want to change that to fit your needs
+            "time_delta": 10000,  # TODO change that to make it realistic, it is equal to 1 week and to compute plant size
+            "weekly_irrigation": 2,  # TODO you may want to change that to make it realistic
+            "obs_soil_organic_matter_std": 0.2,  # TODO you may want to change that to make it realistic
+            "obs_yield_std": 0.2  # TODO you may want to change that to make it realistic
+        }
+
+        # Get the soil type and soil volume
+        soil_type = parameters["soil_type"]
+        soil_volume = self.lot_area * parameters["max_root_depth"]
+
+        # Compute the soil organic matter
+        parameters["soil_organic_matter"] = parameters["soil_organic_matters"][soil_type]
+
+        # Get the conversion ration from cubic meter to liters
+        m3_to_l = 1000
+
+        # Compute lot saturation and wilting points
+        parameters["saturation_point"] = soil_volume * parameters["saturation_points"][soil_type] * m3_to_l
+        parameters["wilting_point"] = soil_volume * parameters["wilting_points"][soil_type] * m3_to_l
+
+        return parameters
+
     @staticmethod
     def get_wilting_point():
         """
@@ -254,89 +343,25 @@ class RootsAndCultureAgent(AgentInterface):
             SoilType.Clays: 2
         }
 
-    def get_parameters(self, time_horizon):
-        """
-        Getter
-        :param time_horizon: the time horizon of planning
-        :return: a dictionary containing the model's parameters
-        """
-
-        # TODO is there some uncertainty about the parameters?
-
-        # TODO is there a need for different parameters for different lots?
-        #  For example, different soil_types/max_root_depth/etc... in different lots
-        # with plate('num_lots', self.n_lots):
-        #     parameters['key'] = sample('key', Normal(0, 1))
-
-        # Retrieve the default parameters
-        parameters = {
-            "growth_function": self.get_growth_function(time_horizon),
-            "max_growth_rate": 0.5,  # TODO change that to make it realistic
-            "evaporation_rate": 0.5,  # TODO change that to make it realistic
-            "soil_type": SoilType.Clays,  # TODO you may want to change that to fit your needs
-            "lot_area": self.lot_area,
-            "max_root_depth": 0.5,  # TODO change that to make it realistic
-            "max_evapotranspiration_rate": 0.5,  # TODO change that to make it realistic
-            "yield_potential": 0.5,  # TODO change that to make it realistic
-            "saturation_points": self.get_saturation_point(),
-            "wilting_points": self.get_wilting_point(),
-            "soil_organic_matters": self.get_soil_organic_matters(),
-            "n_seeds": 84,  # TODO you may want to change that to fit your needs
-            "time_delta": 1,  # TODO change that to make it realistic, it is equal to 1 week and to compute plant size
-        }
-
-        # Get the soil type and soil volume
-        soil_type = parameters["soil_type"]
-        soil_volume = self.lot_area * parameters["max_root_depth"]
-
-        # Compute the soil organic matter
-        parameters["soil_organic_matter"] = parameters["soil_organic_matters"][soil_type]
-
-        # Get the conversion ration from cubic meter to liters
-        m3_to_l = 1000
-
-        # Compute lot saturation and wilting points
-        parameters["saturation_point"] = soil_volume * parameters["saturation_points"][soil_type] * m3_to_l
-        parameters["wilting_point"] = soil_volume * parameters["wilting_points"][soil_type] * m3_to_l
-
-        return parameters
-
     @staticmethod
-    def get_growth_function(time_horizon):
+    def get_growth_function_mean(time_horizon):
         """
         Compute the mean of the Gaussian modelling the growth rate over time
         :param time_horizon: the time horizon of planning
         :return: the mean
         """
-
         # Inflection points are given by the Gaussian mean plus or minus its standard deviation, thus the mean is:
-        mean = time_horizon / 2
+        return time_horizon / 2
 
+    @staticmethod
+    def get_growth_function_std(time_horizon):
+        """
+        Compute the standard deviation of the Gaussian modelling the growth rate over time
+        :param time_horizon: the time horizon of planning
+        :return: the standard deviation
+        """
         # Inflection points are given by the Gaussian mean plus or minus its standard deviation (std), thus the std is:
-        std = time_horizon / 6
-
-        # Create the gaussian distribution modelling the growth rate
-        gaussian = norm(mean, std)
-
-        # Return the growth function
-        return lambda x: gaussian.pdf(0)
-
-    def index_of(self, action_name):
-        """
-        Getter
-        :param action_name: the name of the action whose index must be returned
-        :return: the action index
-        """
-        return self.action_names.index(action_name)
-
-    def is_performed(self, action, actions_performed):
-        """
-        Check whether an action is performed
-        :param action: the action for which the check is done
-        :param actions_performed: all the performed actions
-        :return: True if the action is performed, False otherwise
-        """
-        return jnp.any(self.index_of(action) + 1 == actions_performed, -1)
+        return time_horizon / 6
 
     def model_dynamic(self, states_t, values_t):
         """
@@ -352,10 +377,10 @@ class RootsAndCultureAgent(AgentInterface):
             soil_organic_matter_t, \
             growth_rate_t, \
             wilting_t, \
-            parameters = states_t
+            params = states_t
 
         # Unpack the values at time t
-        t, actions_performed = values_t
+        t, actions_performed, mask = values_t
 
         # Duplicate the model for each lot
         with plate('num_lots', self.n_lots):
@@ -368,42 +393,47 @@ class RootsAndCultureAgent(AgentInterface):
             irrigate = self.is_performed("irrigation", actions_performed)
 
             # Compute the number of plants at time t + 1
-            plant_count_t1 = self.compute_plant_count(plant_count_t, plant, harvest, parameters["n_seeds"])
+            plant_count_t1 = self.compute_plant_count(plant_count_t, plant, harvest, params["n_seeds"])
 
             # Compute the plant size at time t + 1
-            plant_size_t1 = self.compute_plant_size(plant_size_t, growth_rate_t, prune, parameters["time_delta"])
+            plant_size_t1 = self.compute_plant_size(
+                plant_count_t,  plant_count_t1, plant_size_t, growth_rate_t, prune, params["time_delta"]
+            )
 
             # Compute the soil organic matter at time t + 1
             soil_organic_matter_t1 = self.compute_soil_organic_matter(
-                soil_organic_matter_t, plant_size_t, plant_count_t, parameters["lot_area"], prune, fertilize
+                soil_organic_matter_t, plant_size_t, plant_count_t, params["lot_area"], prune, fertilize
             )
 
             # Compute the evapotranspiration rate at time t + 1
             evapotranspiration_rate_t1 = self.compute_evapotranspiration_rate(
-                plant_count_t1, plant_size_t, plant_size_t1, parameters["max_evapotranspiration_rate"]
+                plant_count_t1, plant_size_t, plant_size_t1, params["max_evapotranspiration_rate"]
             )
 
             # Compute the soil water status at time t + 1
             wilting_t1 = self.compute_wilting(
                 wilting_t, evapotranspiration_rate_t1, irrigate,
-                parameters["evaporation_rate"], parameters["lot_area"], parameters["saturation_point"]
+                params["weekly_irrigation"], params["evaporation_rate"], params["lot_area"], params["saturation_point"]
             )
 
             # Compute the soil water status at time t + 1
             soil_water_status_t1 = self.compute_soil_water_status(
-                wilting_t1, parameters["wilting_point"], parameters["saturation_point"]
+                wilting_t1, params["wilting_point"], params["saturation_point"]
             )
 
             # Compute the growth rate at time t + 1
             growth_rate_t1 = self.compute_growth_rate(
-                parameters["growth_function"], t, soil_water_status_t1, fertilize, parameters["max_growth_rate"]
+                t, soil_water_status_t1, fertilize,
+                params["growth_function_mean"], params["growth_function_std"], params["max_growth_rate"]
             )
 
             # Computed the expected observed yield at time t + 1
-            self.compute_yield(plant_count_t1, plant_size_t1, harvest, parameters["yield_potential"])
+            self.compute_yield(
+                plant_count_t1, plant_size_t1, harvest, params["yield_potential"], params["obs_yield_std"], mask
+            )
 
             # Computed the expected observed soil organic matter at time t + 1
-            self.compute_obs_soil_organic_matter(soil_organic_matter_t1)
+            self.compute_obs_soil_organic_matter(soil_organic_matter_t1, params["obs_soil_organic_matter_std"], mask)
 
         # Create the states at time t + 1
         states_t1 = (
@@ -412,24 +442,47 @@ class RootsAndCultureAgent(AgentInterface):
             soil_organic_matter_t1,
             growth_rate_t1,
             wilting_t1,
-            parameters
+            params
         )
         return states_t1, None
 
+    def is_performed(self, action, actions_performed):
+        """
+        Check whether an action is performed
+        :param action: the action for which the check is done
+        :param actions_performed: all the performed actions
+        :return: True if the action is performed, False otherwise
+        """
+        return jnp.any(self.index_of(action) + 1 == actions_performed, -1)
+
+    def index_of(self, action_name):
+        """
+        Getter
+        :param action_name: the name of the action whose index must be returned
+        :return: the action index
+        """
+        return self.action_names.index(action_name)
+
     @staticmethod
-    def compute_wilting(wilting_t, evapotranspiration_rate_t1, irrigate, evaporation_rate, lot_area, saturation_point):
+    def compute_wilting(
+        wilting_t, evapotranspiration_rate_t1, irrigate,
+        weekly_irrigation, evaporation_rate, lot_area, saturation_point
+    ):
         """
         Computed the wilting at time t + 1
         :param wilting_t: the wilting at time t
         :param evapotranspiration_rate_t1: the soil organic matter at time t + 1
         :param irrigate: whether irrigation is performed
+        :param weekly_irrigation: the quantity of water used while irrigating
         :param evaporation_rate: a constant representing the evaporation rate
         :param lot_area: the lot's area
         :param saturation_point: the soil's saturation point
         :return: the wilting at time t + 1
         """
         evaporation_effect = evapotranspiration_rate_t1 + (evaporation_rate * lot_area)
-        return deterministic('wilting', jnp.clip(wilting_t + irrigate - evaporation_effect, a_max=saturation_point))
+        irrigation_effect = weekly_irrigation * irrigate
+        wilting_t1 = wilting_t + irrigation_effect - evaporation_effect
+        return deterministic('wilting', jnp.clip(wilting_t1, a_max=saturation_point))
 
     @staticmethod
     def compute_soil_water_status(wilting_t1, wilting_point, saturation_point):
@@ -440,8 +493,8 @@ class RootsAndCultureAgent(AgentInterface):
         :param saturation_point: a constant representing the evaporation rate
         :return: the soil water status at time t + 1
         """
-        soil_water_status = jnp.clip((wilting_t1 - wilting_point) / (saturation_point - wilting_point))
-        return deterministic('soil_water_status', jnp.clip(soil_water_status, a_min=0, a_max=1))
+        soil_water_status_t1 = (wilting_t1 - wilting_point) / (saturation_point - wilting_point)
+        return deterministic('soil_water_status', jnp.clip(soil_water_status_t1, a_min=0, a_max=1))
 
     @staticmethod
     def compute_soil_organic_matter(soil_organic_matter_t, plant_size_t, plant_count_t, lot_area, prune, fertilize):
@@ -473,9 +526,11 @@ class RootsAndCultureAgent(AgentInterface):
         return deterministic('soil_organic_matter', soil_organic_matter_t1)
 
     @staticmethod
-    def compute_plant_size(plant_size_t, growth_rate_t, pruning, time_delta):
+    def compute_plant_size(plant_count_t, plant_count_t1, plant_size_t, growth_rate_t, pruning, time_delta):
         """
         Compute the plant size at time t + 1
+        :param plant_count_t: the plant count at time t
+        :param plant_count_t1: the plant count at time t + 1
         :param plant_size_t: the plant size at time t
         :param growth_rate_t: the growth rate at time t
         :param pruning: whether pruning is performed
@@ -484,22 +539,31 @@ class RootsAndCultureAgent(AgentInterface):
         """
 
         # Apply the immediate reduction in plant size caused by pruning
+        initial_planting_size = 0.1
+        n_seeds_planted = jnp.clip(plant_count_t1 - plant_count_t, a_min=0)
+        total_plant_count = jnp.clip(plant_count_t1, a_min=1)
+        plant_size_t1 = (plant_size_t * plant_count_t + initial_planting_size * n_seeds_planted) / total_plant_count
+
+        # Apply the immediate reduction in plant size caused by pruning
         pruning_effect = 1 - 0.2 * pruning
-        plant_size_t1 = plant_size_t * pruning_effect
+        plant_size_t1 = plant_size_t1 * pruning_effect
 
         # Apply the immediate reduction in plant size due to the effect of pruning
         pruning_effect = 1 + 0.1 * pruning
-        plant_size_t1 = plant_size_t1 + plant_size_t * growth_rate_t * time_delta * pruning_effect
+        plant_size_t1 = plant_size_t1 + plant_size_t1 * growth_rate_t * time_delta * pruning_effect
         return deterministic('plant_size', plant_size_t1)
 
     @staticmethod
-    def compute_growth_rate(growth_function, t, soil_water_status_t1, fertiliser, max_growth_rate):
+    def compute_growth_rate(
+        t, soil_water_status_t1, fertiliser, growth_function_mean, growth_function_std, max_growth_rate
+    ):
         """
         Compute the growth rate at time t + 1
-        :param growth_function: the function defining the plant growth for each time step
         :param t: the time step t
         :param soil_water_status_t1: the soil water status at time t + 1
         :param fertiliser: whether some fertiliser is applied
+        :param growth_function_mean: the mean of the function defining the plant growth for each time step
+        :param growth_function_std: the standard deviation of the function defining the plant growth for each time step
         :param max_growth_rate: the maximum growth rate of the plant
         :return: the growth rate at time t + 1
         """
@@ -508,7 +572,8 @@ class RootsAndCultureAgent(AgentInterface):
         fertiliser_effect = 1 + 0.1 * fertiliser
 
         # Compute the growth rate at time t + 1
-        growth_rate_t1 = growth_function(t + 1) * soil_water_status_t1 * fertiliser_effect
+        growth_rate_t1 = norm.pdf(t + 1, loc=growth_function_mean, scale=growth_function_std)
+        growth_rate_t1 = growth_rate_t1 * soil_water_status_t1 * fertiliser_effect
         return deterministic('growth_rate', jnp.clip(growth_rate_t1, a_min=0, a_max=max_growth_rate))
 
     @staticmethod
@@ -542,62 +607,39 @@ class RootsAndCultureAgent(AgentInterface):
         return deterministic('plant_count', (plant_count_t + plant * n_seeds) * (1 - harvest))
 
     @staticmethod
-    def compute_yield(plant_count, plant_size, harvest, yield_potential):
+    def compute_yield(plant_count, plant_size, harvest, yield_potential, obs_yield_standard_dev, mask):
         """
         Compute the yield based on the system states and model's parameters
         :param plant_count: the number of plants currently present
         :param plant_size: the average size of the plants
         :param harvest: whether harvesting is performed
         :param yield_potential: the yield potential of the plant
+        :param obs_yield_standard_dev: the standard deviation of the yield measurement
+        :param mask: the observation mask describing when the yield is observed
         :return: the expected yield
         """
-        # TODO do we want to model the uncertainty of the measurement as a Gaussian?
-        return deterministic('obs_yield', plant_count * plant_size * yield_potential * harvest)
+
+        # Create the yield distribution
+        obs_yield_mean = plant_count * plant_size * yield_potential * (1 - harvest)
+        obs_yield_std = obs_yield_standard_dev * harvest
+        yield_distribution = Normal(obs_yield_mean, obs_yield_std).mask(True if mask is None else mask['obs_yield'])
+
+        # Sample from the yield distribution
+        return sample('obs_yield', yield_distribution)
 
     @staticmethod
-    def compute_obs_soil_organic_matter(soil_organic_matter_t1):
+    def compute_obs_soil_organic_matter(soil_organic_matter_t1, obs_soil_organic_matter_std, mask):
         """
         Computed the expected observed soil organic matter at time t + 1
         :param soil_organic_matter_t1: the true soil organic matter in the system at time t + 1
+        :param obs_soil_organic_matter_std: the standard deviation of the soil organic matter measurement
+        :param mask: the observation mask describing when the soil organic matter is observed
         :return: the expected observed soil organic matter at time t + 1
         """
-        # TODO do we want to model the uncertainty of the measurement as a Gaussian?
-        return deterministic('obs_soil_organic_matter', soil_organic_matter_t1)
 
-    def model(self, *args, time_horizon=-1, **kwargs):
-        """
-        Implement the generative model of the agent
-        :param args: unused positional arguments
-        :param time_horizon: the time horizon of planning, if it equals -1, the length of the current policy is used
-        :param kwargs: unused keyword arguments
-        """
+        # Create the soil organic matter distribution
+        som_distribution = Normal(soil_organic_matter_t1, obs_soil_organic_matter_std)
+        som_distribution = som_distribution.mask(True if mask is None else mask['obs_yield'])
 
-        # Make sure the time horizon is value
-        time_horizon = len(self.policy) if time_horizon == -1 else time_horizon
-
-        # Create time indices from zero up to the time horizon
-        time_indices = jnp.expand_dims(jnp.expand_dims(jnp.arange(0, time_horizon), axis=1), axis=2)
-        time_indices = jnp.repeat(time_indices, self.n_lots, axis=1)
-
-        # Create the model's parameters
-        parameters = self.get_parameters(time_horizon)
-
-        # Initialise the states at time zero
-        plant_count = jnp.zeros(self.n_lots)
-        plant_size = jnp.zeros(self.n_lots)
-        soil_organic_matter = jnp.ones(self.n_lots) * parameters["soil_organic_matter"]
-        growth_rate = jnp.zeros(self.n_lots)
-        wilting = jnp.ones(self.n_lots) * 0.5 * (parameters["saturation_point"] + parameters["wilting_point"])
-
-        # Create the initial states
-        initial_states = (
-            plant_count,
-            plant_size,
-            soil_organic_matter,
-            growth_rate,
-            wilting,
-            parameters
-        )
-
-        # Call the scan function that unroll the model over time
-        scan(self.model_dynamic, initial_states, (time_indices, self.policy[:time_horizon]))
+        # Sample from the soil organic matter distribution
+        return sample('obs_soil_organic_matter', som_distribution)

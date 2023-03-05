@@ -110,15 +110,16 @@ def draw_beliefs(samples, var_1=None, var_2=None, measured=None, fig_size=(16, 1
 
         # Check whether to create a twin axis, if the variables relative values are too different
         twin_x = False
-        if samples[name_1].max() < samples[name_2].max() * 0.1:
-            twin_x = True
-        if samples[name_1].max() * 0.1 > samples[name_2].max():
-            twin_x = True
+        if name_1 is not None and name_2 is not None:
+            if samples[name_1].max() < samples[name_2].max() * 0.1:
+                twin_x = True
+            if samples[name_1].max() * 0.1 > samples[name_2].max():
+                twin_x = True
 
         # Make sure both variables have the same shape
-        if len(samples[name_1].shape) == 1:
+        if name_2 is not None and len(samples[name_1].shape) == 1:
             samples[name_1] = resize(samples[name_1], samples[name_2].shape)
-        if len(samples[name_2].shape) == 1:
+        if name_2 is not None and len(samples[name_2].shape) == 1:
             samples[name_2] = resize(samples[name_2], samples[name_1].shape)
 
         # Set the format and color
@@ -132,8 +133,10 @@ def draw_beliefs(samples, var_1=None, var_2=None, measured=None, fig_size=(16, 1
             lines = lines_1 + lines_2
             axes[i].legend(lines, [line.get_label() for line in lines], loc="upper left")
         else:
-            draw_chart(axes[i], samples[name_1], label_1, fmt=v1_format, color=v1_color, lw=1.5)
-            draw_chart(axes[i], samples[name_2], label_2, fmt=v2_format, color=v2_color, lw=1.5)
+            if name_1 is not None:
+                draw_chart(axes[i], samples[name_1], label_1, fmt=v1_format, color=v1_color, lw=1.5)
+            if name_2 is not None:
+                draw_chart(axes[i], samples[name_2], label_2, fmt=v2_format, color=v2_color, lw=1.5)
             axes[i].legend(loc="upper left")
 
     return fig
