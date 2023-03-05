@@ -29,6 +29,9 @@ class GetStartedAgent(AgentInterface):
         AgentInterface.ontology_name(PlantingSeeds, "HempSeeds")
     ]
 
+    # The agent's name
+    name = "Tutorial.GetStarted"
+
     def __init__(self, data):
         """
         Construct the get started agent
@@ -39,7 +42,7 @@ class GetStartedAgent(AgentInterface):
         obs_to_site = {
             AgentInterface.ontology_name(HempYield, "Continuous"): "obs_yield"
         }
-        super().__init__("Tutorial.GetStarted", data, obs_to_site=obs_to_site)
+        super().__init__(data, obs_to_site=obs_to_site)
 
         # Store actions information
         self.action_names = ["planting-hemp", "harvest-hemp"]

@@ -19,15 +19,12 @@ class AgentInterface(ABC):
     An abstract class representing a model
     """
 
-    def __init__(self, name, data, obs_to_site):
+    def __init__(self, data, obs_to_site):
         """
         Constructor
-        :param name: the model name
         :param data: the data loader
         :param obs_to_site: a dictionary that maps observations name in the ontology to their sample site name
         """
-        # The model name
-        self.name = name
 
         # The time horizon of planning
         self.time_horizon = 1

@@ -28,15 +28,10 @@
             "v1.genetics.base.plant.Plant.PlantSpecies.Hemp"
         ],
         "interventions": {
-            "planting-hemp": "v1.management.base.agriculture.Planting.PlantingSeeds.HempSeeds",
-            "harvest-hemp": "v1.management.base.agriculture.Harvest.HarvestCrops.Hemp",
+            "planting": "v1.management.base.agriculture.Planting.PlantingSeeds.HempSeeds",
+            "harvesting": "v1.management.base.agriculture.Harvest.HarvestCrops.Hemp",
             "irrigation": "v1.management.base.agriculture.Irrigation.IrrigateCrops.Yes",
-            "fertilizer": "v1.management.base.agriculture.Fertilizer.FertilizeSoil.No",
-            "vermi-compost": "v1.management.base.agriculture.VermiCompost.UseVermiCompost.Yes",
-            "myco": "v1.management.base.agriculture.Mycorrhizae.UseMycorrhizae.Yes",
-            "manure": "v1.management.base.agriculture.CowManure.UseCowManure.Yes",
-            "pesticide": "v1.management.base.agriculture.Pesticide.SpreadPesticide.Yes",
-            "biochar": "v1.management.base.agriculture.BioChar.UseBioChar.Yes",
+            "fertilizer": "v1.management.base.agriculture.Fertilizer.FertilizeSoil.Yes",
             "pruning": "v1.management.base.agriculture.Pruning.PruneCrops.Yes"
         },
         "objective": {
@@ -46,27 +41,20 @@
         },
         "policy": [
             [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-            [], [], [], [], [], ["planting-hemp","irrigation"], ["irrigation"], ["pruning"], ["irrigation","vermi-compost","myco","manure","biochar"], ["irrigation","vermi-compost","myco","manure","biochar"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation","pruning"], [], ["irrigation"], ["pruning"],
-            ["irrigation"], ["harvest-hemp"], [], [], [], [], [], [], [], [], []
+            [], [], [], [], [], ["planting","irrigation"], ["irrigation"], ["pruning"], ["irrigation"],
+            ["irrigation"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation","pruning"], [], ["irrigation"],
+            ["pruning"], ["irrigation"], ["harvesting"], [], [], [], [], [], [], [], [], []
         ]
     }, {
         "name": "roots-and-culture-notill-2",
         "species": [
-            "v1.genetics.base.plant.Plant.PlantSpecies.Hemp",
-            "v1.genetics.base.plant.Plant.PlantSpecies.Alfalfa"
+            "v1.genetics.base.plant.Plant.PlantSpecies.Hemp"
         ],
         "interventions": {
-            "planting-alfalfa": "v1.management.base.agriculture.Planting.PlantingSeeds.AlfalfaSeeds",
-            "harvest-alfalfa": "v1.management.base.agriculture.Harvest.HarvestCrops.Alfalfa",
-            "planting-hemp": "v1.management.base.agriculture.Planting.PlantingSeeds.HempSeeds",
-            "harvest-hemp": "v1.management.base.agriculture.Harvest.HarvestCrops.Hemp",
+            "planting": "v1.management.base.agriculture.Planting.PlantingSeeds.HempSeeds",
+            "harvesting": "v1.management.base.agriculture.Harvest.HarvestCrops.Hemp",
             "irrigation": "v1.management.base.agriculture.Irrigation.IrrigateCrops.Yes",
-            "fertilizer": "v1.management.base.agriculture.Fertilizer.FertilizeSoil.No",
-            "vermi-compost": "v1.management.base.agriculture.VermiCompost.UseVermiCompost.Yes",
-            "myco": "v1.management.base.agriculture.Mycorrhizae.UseMycorrhizae.Yes",
-            "manure": "v1.management.base.agriculture.CowManure.UseCowManure.Yes",
-            "pesticide": "v1.management.base.agriculture.Pesticide.SpreadPesticide.Yes",
-            "biochar": "v1.management.base.agriculture.BioChar.UseBioChar.Yes",
+            "fertilizer": "v1.management.base.agriculture.Fertilizer.FertilizeSoil.Yes",
             "pruning": "v1.management.base.agriculture.Pruning.PruneCrops.Yes"
         },
         "objective": {
@@ -76,8 +64,9 @@
         },
         "policy": [
             [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-            [], [], [], [], [], ["planting_alfalfa","planting-hemp","irrigation"], ["irrigation"], ["pruning"], ["irrigation","vermi-compost","myco","manure","biochar"], ["irrigation","vermi-compost","myco","manure","biochar"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation","pruning"], [], ["irrigation"], ["pruning"],
-            ["irrigation"], ["harvest-hemp","harvest-alfalfa"], [], [], [], [], [], [], [], [], []
+            [], [], [], [], [], ["planting","irrigation"], ["irrigation"], ["pruning"], ["irrigation"],
+            ["irrigation"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation","pruning"], [], ["irrigation"],
+            ["pruning"], ["irrigation"], ["harvesting"], [], [], [], [], [], [], [], [], []
         ]
     }]
 }
