@@ -144,7 +144,7 @@ class GetStartedAgent(AgentInterface):
         """
         Getter
         :param action_name: the name of the action whose index must be returned
-        :param key_based: whether to look up the action name in the keys of the action directory or its value
+        :param key_based: whether to look up the action name in the keys of the actions directory or its values
         :return: the action index
         """
         if key_based is True:
