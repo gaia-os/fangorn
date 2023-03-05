@@ -41,12 +41,30 @@ class DataLoader:
         ], geometry='bounds')
 
         # Load the policies
-        strategies_by_name = {strategy.name: strategy for strategy in self.project.strategies}
-        self.policies = [strategies_by_name[lot.strategy].policy for lot in self.lots]
+        self.policies = self.load_policies()
 
         # Load the all the reports
         self.obs_names = []
         self.reports = self.load_reports(reports_dir)
+
+    def load_policies(self):
+        """
+        Load the policies from the file system
+        :return: the loaded policies
+        """
+
+        # Get the policy and corresponding interventions for each lot
+        strategies = {strategy.name: strategy for strategy in self.project.strategies}
+        policies = [strategies[lot.strategy].policy for lot in self.lots]
+        interventions = [strategies[lot.strategy].interventions for lot in self.lots]
+
+        # Turn all the action names that are local to the configuration file into their corresponding ontology entries
+        for i, policy in enumerate(policies):
+            for j, actions in enumerate(policy):
+                for k, action in enumerate(actions):
+                    policies[i][j][k] = interventions[i][action]
+
+        return policies
 
     @staticmethod
     def load_project(project_file):
@@ -82,7 +100,6 @@ class DataLoader:
         for file in files:
 
             # Load the report from the current file
-            print(file)
             report_json = json.load(file.open())
             report = Report(**report_json)
 

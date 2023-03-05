@@ -76,7 +76,7 @@ def run_like_in_notebook():
     agent.condition_all(data=data)
 
     # The measurement interval is the number of time steps between two observations made by the agent
-    measurement_interval = 2
+    measurement_interval = 4
 
     # Create the mask
     soil_organic_matter_mask = jnp.arange(len(data['obs_soil_organic_matter']))
@@ -112,18 +112,25 @@ def run_like_in_notebook():
     inference_params = {
         "stable_update": True,
         "mask": mask,
-        "data_level": 0
     }
     svi_samples = svi_algorithm.run_inference(inference_params=inference_params)
 
     # Compare the initial prediction, the SVI posterior, and the MCMC posterior
     compare_posteriors(
-        is_observed=mask['lai'],
+        is_observed=mask['obs_soil_organic_matter'],
         mcmc_samples=mcmc_samples,
         svi_samples=svi_samples,
-        prediction_samples=prediction_samples
+        prediction_samples=prediction_samples,
+        var_names=[
+            "soil_organic_matter", "soil_water_status", "growth_rate", "plant_count",
+            "evapotranspiration_rate", "wilting", "plant_size"
+        ],
+        var_labels=[
+            "Soil organic matter", "Soil water status", "Growth rate", "Plant count",
+            "Evapotranspiration rate", "Wilting", "Plant size"
+        ],
+        fig_size=(16, 4.5)
     )
-    plt.show()
     plt.waitforbuttonpress()
 
 

@@ -61,13 +61,13 @@ class RootsAndCultureAgent(AgentInterface):
     ]
 
     # The agent's actions
-    actions = [
-        AgentInterface.ontology_name(PlantingSeeds, "HempSeeds"),
-        AgentInterface.ontology_name(HarvestCrops, "Hemp"),
-        AgentInterface.ontology_name(PruneCrops, "Yes"),
-        AgentInterface.ontology_name(FertilizeSoil, "Yes"),
-        AgentInterface.ontology_name(IrrigateCrops, "Yes")
-    ]
+    actions = {
+        "planting": AgentInterface.ontology_name(PlantingSeeds, "HempSeeds"),
+        "harvesting": AgentInterface.ontology_name(HarvestCrops, "Hemp"),
+        "fertilizer": AgentInterface.ontology_name(PruneCrops, "Yes"),
+        "pruning": AgentInterface.ontology_name(FertilizeSoil, "Yes"),
+        "irrigation": AgentInterface.ontology_name(IrrigateCrops, "Yes")
+    }
 
     # The agent's name
     name = "Roots-and-Culture.roots-indoor1.Deterministic"
@@ -90,8 +90,7 @@ class RootsAndCultureAgent(AgentInterface):
         self.lot_area = jnp.array([100.] * self.n_lots)  # TODO change that to make it realistic
 
         # Store actions information
-        self.action_names = ["irrigation", "fertilizer", "pruning", "planting", "harvesting"]
-        self.n_actions = len(self.action_names)
+        self.n_actions = len(self.actions)
 
         # Pre-process the default policies
         self.policy = stack([self.to_array(policy) for policy in data.policies], -2)
@@ -104,7 +103,7 @@ class RootsAndCultureAgent(AgentInterface):
         """
 
         # Replace action names by their corresponding indices
-        policy = tree_map(lambda action: self.index_of(action) + 1 if action else action, policy)
+        policy = tree_map(lambda action: self.index_of(action, key_based=False) + 1 if action else action, policy)
 
         # Pad the actions to ensure they all have the same length
         return stack([pad(array(actions), (0, self.n_actions - len(actions))) for actions in policy])
@@ -181,13 +180,14 @@ class RootsAndCultureAgent(AgentInterface):
         :param kwargs: the guide's keyword arguments
         :return: the guide
         """
-        return AutoMultivariateNormal(self.model)()
+        return AutoMultivariateNormal(self.model)
 
     def model(self, *args, time_horizon=-1, mask=None, **kwargs):
         """
         Implement the generative model of the agent
         :param args: unused positional arguments
         :param time_horizon: the time horizon of planning, if it equals -1, the length of the current policy is used
+        :param mask: all the observation masks
         :param kwargs: unused keyword arguments
         """
 
@@ -383,7 +383,7 @@ class RootsAndCultureAgent(AgentInterface):
         t, actions_performed, mask = values_t
 
         # Duplicate the model for each lot
-        with plate('num_lots', self.n_lots):
+        with plate('n_lots', self.n_lots):
 
             # Check if planting, fertilising, pruning, harvesting and irrigation are performed at time t
             plant = self.is_performed("planting", actions_performed)
@@ -455,13 +455,17 @@ class RootsAndCultureAgent(AgentInterface):
         """
         return jnp.any(self.index_of(action) + 1 == actions_performed, -1)
 
-    def index_of(self, action_name):
+    def index_of(self, action_name, key_based=True):
         """
         Getter
         :param action_name: the name of the action whose index must be returned
+        :param key_based: whether to look up the action name in the keys of the action directory or its value
         :return: the action index
         """
-        return self.action_names.index(action_name)
+        if key_based is True:
+            return list(self.actions.keys()).index(action_name)
+        else:
+            return list(self.actions.values()).index(action_name)
 
     @staticmethod
     def compute_wilting(
@@ -607,14 +611,14 @@ class RootsAndCultureAgent(AgentInterface):
         return deterministic('plant_count', (plant_count_t + plant * n_seeds) * (1 - harvest))
 
     @staticmethod
-    def compute_yield(plant_count, plant_size, harvest, yield_potential, obs_yield_standard_dev, mask):
+    def compute_yield(plant_count, plant_size, harvest, yield_potential, obs_yield_std, mask):
         """
         Compute the yield based on the system states and model's parameters
         :param plant_count: the number of plants currently present
         :param plant_size: the average size of the plants
         :param harvest: whether harvesting is performed
         :param yield_potential: the yield potential of the plant
-        :param obs_yield_standard_dev: the standard deviation of the yield measurement
+        :param obs_yield_std: the standard deviation of the yield measurement
         :param mask: the observation mask describing when the yield is observed
         :return: the expected yield
         """
@@ -624,8 +628,8 @@ class RootsAndCultureAgent(AgentInterface):
 
         # Create the yield distribution
         obs_yield_mean = plant_count * plant_size * yield_potential * (1 - harvest)
-        obs_yield_std = obs_yield_standard_dev * harvest
-        yield_distribution = Normal(obs_yield_mean, obs_yield_std).mask(yield_mask)
+        obs_yield_scale = obs_yield_std * harvest + 1e-10
+        yield_distribution = Normal(obs_yield_mean, obs_yield_scale).mask(yield_mask)
 
         # Sample from the yield distribution
         return sample('obs_yield', yield_distribution)
@@ -644,7 +648,7 @@ class RootsAndCultureAgent(AgentInterface):
         soil_organic_matter_mask = RootsAndCultureAgent.get_mask(mask, 'obs_soil_organic_matter')
 
         # Create the soil organic matter distribution
-        som_distribution = Normal(soil_organic_matter_t1, obs_soil_organic_matter_std)
+        som_distribution = Normal(soil_organic_matter_t1, obs_soil_organic_matter_std + 1e-10)
         som_distribution = som_distribution.mask(soil_organic_matter_mask)
 
         # Sample from the soil organic matter distribution

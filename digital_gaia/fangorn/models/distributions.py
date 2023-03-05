@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax.scipy.special import log_ndtr, xlogy
+from jax.scipy.special import log_ndtr
 from jax import lax, random
 from numpyro.distributions.distribution import Distribution
 from numpyro.distributions import constraints

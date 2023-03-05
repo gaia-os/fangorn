@@ -55,34 +55,6 @@ class NonLinearNormal:
         sample(self.name, self.dist(params, state))
 
 
-class ThreeAgro:
-
-    def __call__(self, params, state):
-        n_veg_types = params['V']
-        n_states = params['S']
-        plant_biomass = state[..., :n_veg_types]
-        soil_biomass = state[..., n_veg_types:n_states]
-        confidence_interval = params["ci"]
-
-        # Sample plant biomass carbon
-        plant_biomass_carbon_mean = nn.softmax(plant_biomass, axis=-1) * params['plant_carbon_coefficients']
-
-        # Sample soil biomass carbon
-        soil_biomass_carbon_mean = nn.softmax(soil_biomass, axis=-1) * params['soil_carbon_coefficients']
-
-        # Total plant biomass
-        total_plant_biomass_mean = jnp.expand_dims(plant_biomass.sum(axis=-1), axis=-1)
-
-        mean = [plant_biomass_carbon_mean, soil_biomass_carbon_mean, total_plant_biomass_mean]
-        mean = jnp.concatenate(mean, axis=-1)
-        std = ThreeAgro.std_from(confidence_interval)
-        return mean, std
-
-    @staticmethod
-    def std_from(confidence_interval):
-        return confidence_interval / 2  # TODO check if std = scale parameter and update if not
-
-
 class ElementSix:
 
     def __call__(self, soil_biomass, plant_density, plant_height, yield_density, params, mask, data_level=0):

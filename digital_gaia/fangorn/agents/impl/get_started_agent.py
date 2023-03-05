@@ -24,10 +24,10 @@ class GetStartedAgent(AgentInterface):
     ]
 
     # The agent's actions
-    actions = [
-        AgentInterface.ontology_name(HarvestCrops, "Hemp"),
-        AgentInterface.ontology_name(PlantingSeeds, "HempSeeds")
-    ]
+    actions = {
+        "harvest-hemp": AgentInterface.ontology_name(HarvestCrops, "Hemp"),
+        "planting-hemp": AgentInterface.ontology_name(PlantingSeeds, "HempSeeds")
+    }
 
     # The agent's name
     name = "Tutorial.GetStarted"
@@ -45,8 +45,7 @@ class GetStartedAgent(AgentInterface):
         super().__init__(data, obs_to_site=obs_to_site)
 
         # Store actions information
-        self.action_names = ["planting-hemp", "harvest-hemp"]
-        self.n_actions = len(self.action_names)
+        self.n_actions = len(self.actions)
 
         # Store lots information
         self.n_lots = len(self.data.lots)
@@ -62,7 +61,7 @@ class GetStartedAgent(AgentInterface):
         """
 
         # Replace action names by their corresponding indices
-        policy = tree_map(lambda action: self.action_names.index(action) + 1 if action else action, policy)
+        policy = tree_map(lambda action: self.index_of(action, key_based=False) + 1 if action else action, policy)
 
         # Pad the actions to ensure they all have the same length
         return stack([pad(array(actions), (0, self.n_actions - len(actions))) for actions in policy])
@@ -141,13 +140,17 @@ class GetStartedAgent(AgentInterface):
         """
         return jnp.any(self.index_of(action) + 1 == actions_performed, -1)
 
-    def index_of(self, action_name):
+    def index_of(self, action_name, key_based=True):
         """
         Getter
         :param action_name: the name of the action whose index must be returned
+        :param key_based: whether to look up the action name in the keys of the action directory or its value
         :return: the action index
         """
-        return self.action_names.index(action_name)
+        if key_based is True:
+            return list(self.actions.keys()).index(action_name)
+        else:
+            return list(self.actions.values()).index(action_name)
 
     def model_dynamic(self, states_t, actions_performed):  # TODO update in notebook
         """

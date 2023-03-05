@@ -1,5 +1,5 @@
 import abc
-import copy
+from copy import deepcopy
 import os
 from digital_gaia.fangorn.agents.AgentInterface import AgentInterface
 
@@ -54,7 +54,7 @@ class AgentFactory:
         :param: the data loader containing the project's information
         :return: all the project's interventions
         """
-        return {value for strategy in data.project.strategies for key, value in strategy.interventions.items()}
+        return {action for strategy in data.project.strategies for _, action in strategy.interventions.items()}
 
     @staticmethod
     def display_interventions_mismatch(agent, interventions):
@@ -100,14 +100,13 @@ class AgentFactory:
 
                 # Inform the user that no actions attribute was found, if required
                 if verbose is True:
-                    print(type(agent))
                     print(f"[ERROR] {agent.name} has no attribute named 'actions'.")
 
                 # Skip this agent
                 continue
 
             # Check whether the agents interventions matches the project's interventions
-            intervention_matches = interventions.issubset(set(agent.actions))
+            intervention_matches = interventions.issubset(set(agent.actions.values()))
             if not intervention_matches and debug is True:
                 AgentFactory.display_interventions_mismatch(agent, interventions)
 
@@ -234,4 +233,4 @@ class AgentFactory:
             AgentFactory.print_list("Agents satisfying interventions and species:", agents)
 
         # Instantiate the compatible agents
-        return [agent(copy.deepcopy(data)) for agent in agents]
+        return [agent(deepcopy(data)) for agent in agents]
