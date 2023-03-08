@@ -1,3 +1,4 @@
+from jax import jit
 from jax.scipy.stats import norm
 from digital_gaia.fangorn.ontology.v1.measurement.base.agriculture.Yield import HempYield
 from digital_gaia.fangorn.ontology.v1.genetics.base.plant.Plant import PlantSpecies
@@ -198,7 +199,7 @@ class RootsAndCultureAgent(AgentInterface):
         time_indices = jnp.arange(0, time_horizon)
 
         # Create the model's parameters
-        parameters = self.get_parameters(time_horizon)
+        parameters = self.get_parameters()
 
         # Initialise the states at time zero
         plant_count = jnp.zeros(self.n_lots)
@@ -220,10 +221,9 @@ class RootsAndCultureAgent(AgentInterface):
         # Call the scan function that unroll the model over time
         scan(self.model_dynamic, initial_states, (time_indices, self.policy[:time_horizon], mask))
 
-    def get_parameters(self, time_horizon):
+    def get_parameters(self):
         """
         Getter
-        :param time_horizon: the time horizon of planning
         :return: a dictionary containing the model's parameters
         """
 
@@ -236,8 +236,8 @@ class RootsAndCultureAgent(AgentInterface):
 
         # Retrieve the default parameters
         parameters = {
-            "growth_function_mean": self.get_growth_function_mean(time_horizon),
-            "growth_function_std": self.get_growth_function_std(time_horizon),
+            "growth_function_mean": self.get_growth_function_mean(),
+            "growth_function_std": self.get_growth_function_std(),
             "max_growth_rate": 0.5,  # TODO change that to make it realistic
             "evaporation_rate": 0.5,  # TODO change that to make it realistic
             "soil_type": SoilType.Clays,  # TODO you may want to change that to fit your needs
@@ -343,25 +343,25 @@ class RootsAndCultureAgent(AgentInterface):
             SoilType.Clays: 2
         }
 
-    @staticmethod
-    def get_growth_function_mean(time_horizon):
+    def get_growth_function_mean(self):
         """
         Compute the mean of the Gaussian modelling the growth rate over time
-        :param time_horizon: the time horizon of planning
         :return: the mean
         """
         # Inflection points are given by the Gaussian mean plus or minus its standard deviation, thus the mean is:
-        return time_horizon / 2
+        start_time = self.first_time_of(self.index_of("planting"), self.policy)
+        end_time = self.last_time_of(self.index_of("harvesting"), self.policy)
+        return start_time + (end_time - start_time) / 2
 
-    @staticmethod
-    def get_growth_function_std(time_horizon):
+    def get_growth_function_std(self):
         """
         Compute the standard deviation of the Gaussian modelling the growth rate over time
-        :param time_horizon: the time horizon of planning
         :return: the standard deviation
         """
         # Inflection points are given by the Gaussian mean plus or minus its standard deviation (std), thus the std is:
-        return time_horizon / 6
+        start_time = self.first_time_of(self.index_of("planting"), self.policy)
+        end_time = self.last_time_of(self.index_of("harvesting"), self.policy)
+        return (end_time - start_time) / 6
 
     def model_dynamic(self, states_t, values_t):
         """
@@ -466,6 +466,39 @@ class RootsAndCultureAgent(AgentInterface):
             return list(self.actions.keys()).index(action_name)
         else:
             return list(self.actions.values()).index(action_name)
+
+    @staticmethod
+    @jit
+    def first_time_of(action, actions_performed):
+        """
+        Getter
+        :param action: the action for which the first time index where the action is performed will be returned
+        :param actions_performed: all the performed actions for all time steps
+        :return: the first time index where the action is performed
+        """
+
+        # Create time indices from zero up to the time horizon
+        time_indices = jnp.arange(0, actions_performed.shape[0])
+
+        # Get the first time index where the action is performed
+        is_performed = jnp.squeeze(jnp.any(action + 1 == actions_performed, -1))
+        return jnp.where(is_performed, time_indices, jnp.inf).min()
+
+    @staticmethod
+    @jit
+    def last_time_of(action, actions_performed):
+        """
+        Getter
+        :param action: the action for which the last time index where the action is performed will be returned
+        :param actions_performed: all the performed actions for all time steps
+        :return: the last time index where the action is performed
+        """
+        # Create time indices from zero up to the time horizon
+        time_indices = jnp.arange(0, actions_performed.shape[0])
+
+        # Get the first time index where the action is performed
+        is_performed = jnp.squeeze(jnp.any(action + 1 == actions_performed, -1))
+        return jnp.where(is_performed, time_indices, -jnp.inf).max()
 
     @staticmethod
     def compute_wilting(

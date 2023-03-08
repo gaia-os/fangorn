@@ -1,3 +1,4 @@
+from datetime import timedelta
 import jax.numpy as jnp
 from copy import deepcopy
 from geojson_pydantic import Point
@@ -10,8 +11,11 @@ import numpyro
 import abc
 from abc import ABC
 from functools import partial
+from digital_gaia.fangorn.pydantic.Report import Report
+from digital_gaia.fangorn.pydantic.Observation import Observation
 from digital_gaia.fangorn.kernels.impl.MCMCKernel import MCMCKernel
 from digital_gaia.fangorn.kernels.impl.SVIKernel import SVIKernel
+from random import randint
 
 
 class AgentInterface(ABC):
@@ -77,12 +81,69 @@ class AgentInterface(ABC):
             with open(f"{reports_dir}/report-{report.datetime}.{report.id}.json", "w") as f:
                 f.write(report.json(indent=2))
 
-    def create_reports(self):
+    def create_reports(self, domain_name=None):
         """
         Create reports using the agent's model
+        :param domain_name: the domain name to use for the email address and provenance in the reports
         :return: a list of created reports
         """
-        return []
+
+        # Predict the observations value
+        model = self.model if self.conditioned_model is None else self.conditioned_model
+        predictions = self.predict(model=model, num_samples=1)
+
+        # Create the list of reports and the first report date
+        reports = []
+        report_date = self.data.project.start_date
+        domain_name = self.data.project.name.lower() if domain_name is None else domain_name
+
+        # Iterate over all time steps
+        for t in range(0, self.data.T):
+
+            # Iterate over all lots
+            for lot_index in range(len(self.data.lots)):
+
+                # Collect the report's observations
+                observations = self.create_report_observations(lot_index, t, predictions)
+
+                # Create the report corresponding to a specific time and place, then add it to the list of reports
+                report = Report(
+                    datetime=report_date,
+                    location=self.data.find_point_in(self.data.lots[lot_index]),
+                    project_name=self.data.project.name,
+                    reporter=f"rob@{domain_name}.com",
+                    provenance=f"https://api.{domain_name}.com/get_data?{randint(10000, 99999)}",
+                    observations=observations
+                )
+                reports.append(report)
+
+                # Increase the report date by 7 days, i.e., a week
+                report_date += timedelta(days=7)
+
+        return reports
+
+    def create_report_observations(self, lot_index, t, predictions):
+        """
+        Create the report's observations
+        :param lot_index: the index of the lot whose observations need to be created
+        :param t: the time step for which the observations need to be created
+        :param predictions: the model predictions containing the observations value
+        :return: the report's observations
+        """
+
+        # Create the report's observations
+        observations = []
+        for sample_site in self.sample_sites:
+
+            # Create the observation corresponding to each sample site, and add it to the list of observations
+            observation = Observation(**{
+                "name": sample_site,
+                "lot_name": self.data.lots[lot_index].name,
+                "value": predictions[sample_site][0][t][lot_index]
+            })
+            observations.append(observation)
+
+        return observations
 
     def set_time_horizon(self, t):
         """
@@ -264,27 +325,6 @@ class AgentInterface(ABC):
             efe += extrinsic_value + neg_entropy + ambiguity
 
         return efe
-
-    def get_report_locations(self, n_lng=10, n_lat=10):
-        """
-        Getter
-        :param n_lng: the number of longitudinal (from east to west) positions
-        :param n_lat: the number of latitudinal (from north to south) positions
-        :return: n_lng * n_lat locations on a grid within the lot polygon. Note, the polygon is assumed to be a square.
-        """
-        # TODO This function assumes rectangular lots, this should be generalised to any polygon
-        locations = []
-        for lot_index in range(len(self.data.project.lots)):
-            poly = jnp.array(self.data.project.lots[lot_index].bounds.coordinates)
-            step = poly[0, 2] - poly[0, 0]
-            step_lng = step[0] / n_lng
-            step_lat = step[1] / n_lat
-
-            locations.append([
-                poly[0, 0] + jnp.array([(i + 0.5) * step_lng, (j + 0.5) * step_lat])
-                for i in range(n_lng) for j in range(n_lat)
-            ])
-        return jnp.array(locations)
 
     @property
     def policy(self):

@@ -41,8 +41,8 @@
         },
         "policy": [
             [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
-            [], [], [], [], [], ["planting","irrigation"], ["irrigation"], ["pruning"], ["irrigation"],
-            ["irrigation"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation","pruning"], [], ["irrigation"],
+            [], [], [], [], [], ["planting", "irrigation"], ["irrigation"], ["pruning"], ["irrigation"],
+            ["irrigation"], ["pruning"], ["irrigation"], ["pruning"], ["irrigation", "pruning"], [], ["irrigation"],
             ["pruning"], ["irrigation"], ["harvesting"], [], [], [], [], [], [], [], [], []
         ]
     }, {
