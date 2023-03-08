@@ -429,7 +429,7 @@ class RootsAndCultureAgent(AgentInterface):
 
             # Computed the expected observed yield at time t + 1
             self.compute_yield(
-                plant_count_t1, plant_size_t1, harvest, params["yield_potential"], params["obs_yield_std"], mask
+                plant_count_t, plant_size_t1, harvest, params["yield_potential"], params["obs_yield_std"], mask
             )
 
             # Computed the expected observed soil organic matter at time t + 1
@@ -519,7 +519,7 @@ class RootsAndCultureAgent(AgentInterface):
         evaporation_effect = evapotranspiration_rate_t1 + (evaporation_rate * lot_area)
         irrigation_effect = weekly_irrigation * irrigate
         wilting_t1 = wilting_t + irrigation_effect - evaporation_effect
-        return deterministic('wilting', jnp.clip(wilting_t1, a_max=saturation_point))
+        return deterministic("wilting", jnp.clip(wilting_t1, a_max=saturation_point))
 
     @staticmethod
     def compute_soil_water_status(wilting_t1, wilting_point, saturation_point):
@@ -531,7 +531,7 @@ class RootsAndCultureAgent(AgentInterface):
         :return: the soil water status at time t + 1
         """
         soil_water_status_t1 = (wilting_t1 - wilting_point) / (saturation_point - wilting_point)
-        return deterministic('soil_water_status', jnp.clip(soil_water_status_t1, a_min=0, a_max=1))
+        return deterministic("soil_water_status", jnp.clip(soil_water_status_t1, a_min=0, a_max=1))
 
     @staticmethod
     def compute_soil_organic_matter(soil_organic_matter_t, plant_size_t, plant_count_t, lot_area, prune, fertilize):
@@ -560,7 +560,7 @@ class RootsAndCultureAgent(AgentInterface):
         both_effect = (plant_count_t * plant_size_t * 0.04) / lot_area
         soil_organic_matter_t1 = soil_organic_matter_t1 + both_effect * soil_organic_matter_t * prune_and_fertilize
 
-        return deterministic('soil_organic_matter', soil_organic_matter_t1)
+        return deterministic("soil_organic_matter", soil_organic_matter_t1)
 
     @staticmethod
     def compute_plant_size(plant_count_t, plant_count_t1, plant_size_t, growth_rate_t, pruning, time_delta):
@@ -588,7 +588,7 @@ class RootsAndCultureAgent(AgentInterface):
         # Apply the immediate reduction in plant size due to the effect of pruning
         pruning_effect = 1 + 0.1 * pruning
         plant_size_t1 = plant_size_t1 + plant_size_t1 * growth_rate_t * time_delta * pruning_effect
-        return deterministic('plant_size', plant_size_t1)
+        return deterministic("plant_size", plant_size_t1)
 
     @staticmethod
     def compute_growth_rate(
@@ -611,7 +611,7 @@ class RootsAndCultureAgent(AgentInterface):
         # Compute the growth rate at time t + 1
         growth_rate_t1 = norm.pdf(t + 1, loc=growth_function_mean, scale=growth_function_std)
         growth_rate_t1 = growth_rate_t1 * soil_water_status_t1 * fertiliser_effect
-        return deterministic('growth_rate', jnp.clip(growth_rate_t1, a_min=0, a_max=max_growth_rate))
+        return deterministic("growth_rate", jnp.clip(growth_rate_t1, a_min=0, a_max=max_growth_rate))
 
     @staticmethod
     def compute_evapotranspiration_rate(plant_count_t1, plant_size_t, plant_size_t1, max_evapotranspiration_rate):
@@ -629,7 +629,7 @@ class RootsAndCultureAgent(AgentInterface):
 
         # Compute the evapotranspiration rate at time t + 1
         evapotranspiration_rate_t1 = plant_count_t1 * average_plant_size * max_evapotranspiration_rate
-        return deterministic('evapotranspiration_rate', evapotranspiration_rate_t1)
+        return deterministic("evapotranspiration_rate", evapotranspiration_rate_t1)
 
     @staticmethod
     def compute_plant_count(plant_count_t, plant, harvest, n_seeds):
@@ -641,7 +641,7 @@ class RootsAndCultureAgent(AgentInterface):
         :param n_seeds: the number of plant
         :return: the plant count at time t + 1
         """
-        return deterministic('plant_count', (plant_count_t + plant * n_seeds) * (1 - harvest))
+        return deterministic("plant_count", (plant_count_t + plant * n_seeds) * (1 - harvest))
 
     @staticmethod
     def compute_yield(plant_count, plant_size, harvest, yield_potential, obs_yield_std, mask):
@@ -660,12 +660,12 @@ class RootsAndCultureAgent(AgentInterface):
         yield_mask = RootsAndCultureAgent.get_mask(mask, 'obs_yield')
 
         # Create the yield distribution
-        obs_yield_mean = plant_count * plant_size * yield_potential * (1 - harvest)
+        obs_yield_mean = jnp.clip(plant_count * plant_size * yield_potential, a_min=0) * harvest
         obs_yield_scale = obs_yield_std * harvest + 1e-10
         yield_distribution = Normal(obs_yield_mean, obs_yield_scale).mask(yield_mask)
 
         # Sample from the yield distribution
-        return sample('obs_yield', yield_distribution)
+        return sample("obs_yield", yield_distribution)
 
     @staticmethod
     def compute_obs_soil_organic_matter(soil_organic_matter_t1, obs_soil_organic_matter_std, mask):
@@ -685,7 +685,7 @@ class RootsAndCultureAgent(AgentInterface):
         som_distribution = som_distribution.mask(soil_organic_matter_mask)
 
         # Sample from the soil organic matter distribution
-        return sample('obs_soil_organic_matter', som_distribution)
+        return sample("obs_soil_organic_matter", som_distribution)
 
     @staticmethod
     def get_mask(mask, obs_name):
