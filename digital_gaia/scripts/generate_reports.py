@@ -7,6 +7,7 @@ def generate_reports():
     """
     Performing the project assessment
     """
+
     # Load the data and requested agents
     args = ArgumentParser().parse()
     data = DataLoader(args.project, args.reports_dir)

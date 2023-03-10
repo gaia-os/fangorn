@@ -129,28 +129,28 @@ class Engine:
 
         # Perform inference using available data
         cond_model, cond_guide = agent.condition_all(reports)
-        samples = agent.inference_algorithm().run_inference(
+        inference_samples = agent.inference_algorithm().run_inference(
             model=cond_model,
             guide=cond_guide,
             inference_params={"time_horizon": t + 1},
         )
 
         # Perform prediction of future random variables
-        samples = agent.predict(
+        prediction_samples = agent.predict(
             model=agent.conditioned_model,
-            posterior_samples=samples,
-            return_sites=list(samples.keys())
+            posterior_samples=inference_samples,
+            return_sites=list(inference_samples.keys())
         )
 
         # Concatenate report information with predictive samples
         for site_name, data in reports.items():
-            predictive_samples = samples[site_name].mean(axis=0)[data.shape[0]:]
-            reports[site_name] = concatenate((data, predictive_samples), axis=0)
+            samples = prediction_samples[site_name].mean(axis=0)[data.shape[0]:]
+            reports[site_name] = concatenate((data, samples), axis=0)
 
         # Compute the expected free energy
         agent.condition_model(reports)
-        efe = agent.efe(samples, t)
+        efe = agent.efe(prediction_samples, t)
         if self.verbose:
             print(f"Expected Free Energy of {agent.name} agent at time step {t}: {efe}")
 
-        return samples, efe
+        return inference_samples, prediction_samples, efe

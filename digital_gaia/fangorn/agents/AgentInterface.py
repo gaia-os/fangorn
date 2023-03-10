@@ -98,7 +98,7 @@ class AgentInterface(ABC):
         domain_name = self.data.project.name.lower() if domain_name is None else domain_name
 
         # Iterate over all time steps
-        for t in range(0, self.data.T):
+        for t in range(0, len(self.policy)):
 
             # Iterate over all lots
             for lot_index in range(len(self.data.lots)):

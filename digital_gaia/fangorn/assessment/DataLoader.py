@@ -74,7 +74,7 @@ class DataLoader:
         :return: the created project
         """
         if project_file is None:
-            raise FileNotFoundError("project file  as not found")
+            raise FileNotFoundError("Project file was not found.")
         project_json = json.load(open(project_file))
         return Project(**project_json)
 
@@ -131,6 +131,7 @@ class DataLoader:
                 entry = [report.id, report.datetime, location, report.reporter, int(t), lot] + \
                         [obs.value for obs in report.observations if obs.lot_name == self.lots[lot].name]
 
+                print(cols, entry)
                 new_report = gpd.GeoDataFrame(data={key: val for key, val in zip(cols, entry)}, geometry='location')
 
                 # If no reports added yet, create a dataframe containing the observation
