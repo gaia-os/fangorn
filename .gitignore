@@ -133,3 +133,6 @@ dmypy.json
 
 # Pycharm files
 .idea/
+
+# Do not push assessments
+data/assessments

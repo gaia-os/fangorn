@@ -3,6 +3,11 @@ from digital_gaia.fangorn.assessment import ArgumentParser
 from digital_gaia.fangorn.agents.AgentFactory import AgentFactory
 from jax.numpy import concatenate
 import traceback
+import os.path
+import jax.numpy as jnp
+from datetime import timedelta
+from digital_gaia.fangorn.pydantic.Assessment import Assessment, Belief
+import re
 
 
 class Engine:
@@ -154,3 +159,76 @@ class Engine:
             print(f"Expected Free Energy of {agent.name} agent at time step {t}: {efe}")
 
         return inference_samples, prediction_samples, efe
+
+    @staticmethod
+    def compute_belief(sample_site, samples):
+        """
+        Compute the belief associated to the samples passed as parameters
+        :param sample_site: the sample site name
+        :param samples: the samples for which the belief need to be computed
+        :return: the computed belief
+        """
+
+        # Ensure that the sample site has four dimensions
+        if samples.ndim > 4:
+            print(f"[WARNING] The sample site {sample_site} have too many dimensions.")
+            return None
+        while samples.ndim < 4:
+            samples = jnp.expand_dims(samples, axis=1)
+
+        # Compute the belief of the sample site
+        mean = samples.mean(axis=0)
+        std = samples.std(axis=0)
+        return Belief(**{
+            "mean": mean.tolist(),
+            "lower_limit": (mean - std).tolist(),
+            "upper_limit": (mean + std).tolist()
+        })
+
+    def compute_beliefs(self, all_samples):
+        """
+        Compute the beliefs associated with the samples passed as parameters
+        :param all_samples: the samples whose beliefs should be computed
+        :return: the computed beliefs
+        """
+        beliefs = {
+            sample_site: self.compute_belief(sample_site, samples)
+            for sample_site, samples in all_samples.items()
+        }
+        return dict(filter(lambda pair: pair[1] is not None, beliefs.items()))
+
+    def save(self, saving_directory, assessment):
+        """
+        Save the results on the filesystem
+        :param saving_directory: the directory in which the results should be saved
+        :param assessment: the project assessment
+        """
+
+        # Retrieve the project's starting date
+        project_start_date = self.data.project.start_date
+
+        # Iterates over all agents
+        for agent_name, results in assessment.items():
+
+            # Iterates over time steps
+            for t, (inference_samples, prediction_samples, efe) in enumerate(results):
+
+                # Create the pydantic assessment
+                pydantic_assessment = Assessment(**{
+                    "date": project_start_date + t * timedelta(days=7),
+                    "efe": efe,
+                    "beliefs": self.compute_beliefs(inference_samples),
+                    "predictions": self.compute_beliefs(prediction_samples)
+                })
+
+                # Create the saving directory, if it does not exist
+                full_saving_directory = f"{saving_directory}/{agent_name}/{t}/"
+                os.makedirs(full_saving_directory, exist_ok=True)
+
+                # Write the pydantic assessment on the file system
+                with open(f"{full_saving_directory}/{agent_name}.json", "w") as f:
+                    json_string = pydantic_assessment.json(indent=4)
+                    json_string = re.sub("[\[]\n[ ]+", "[", json_string)
+                    json_string = re.sub("\n[ ]+[\]]", "]", json_string)
+                    json_string = re.sub("\n[ ]+[\[]", "[", json_string)
+                    f.write(json_string)
